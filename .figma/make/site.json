@@ -1,5 +1,6 @@
 {
-  "description": "Streamline university attendance tracking with a QR code system, offering students and lecturers an interactive dashboard for managing attendance efficiently.",
+  "title": "SmartAttend | Sistem Presensi Mahasiswa",
+  "description": "Prototype sistem presensi digital mahasiswa dan dosen berbasis web.",
   "robots": {
     "index": false
   },
