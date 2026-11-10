@@ -302,7 +302,7 @@ function Sidebar({ role, screen, navigate, switchRole }: { role: Role; screen: S
 }
 
 function Topbar({ title, role, onSwitch }: { title: string; role: Role; onSwitch: () => void }) {
-  return <header className={`sticky top-0 z-20 flex h-16 border-b border-slate-200/80 bg-white/90 px-5 backdrop-blur md:px-8 ${role === "student" ? "w-[1156px] items-center justify-center gap-x-[816px] gap-y-0" : "items-center justify-between"}`}>
+  return <header className={`sticky top-0 z-20 flex h-16 border-b border-slate-200/80 bg-white/90 px-5 backdrop-blur md:px-8 items-center justify-between w-full`}>
     <div className="flex items-center gap-3 lg:hidden"><Logo compact /><span className="font-bold text-slate-900">{title}</span></div>
     <div className="hidden lg:block text-sm font-semibold text-slate-500">{title}</div>
     <div className="flex items-center gap-2">
