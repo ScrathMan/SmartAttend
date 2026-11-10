@@ -1,6 +1,9 @@
 {
   "title": "SmartAttend | Sistem Presensi Mahasiswa",
   "description": "Prototype sistem presensi digital mahasiswa dan dosen berbasis web.",
+  "icons": {
+    "icon": "/favicon.png"
+  },
   "robots": {
     "index": false
   },
