@@ -55,3 +55,5 @@ button {
     animation-iteration-count: 1 !important;
   }
 }
+
+:root { color-scheme: light; }
