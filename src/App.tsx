@@ -61,13 +61,13 @@ const studentCourses = [
 ];
 
 const initialHistory = [
-  { date: "Rabu, 22 Mei 2024", course: "Basis Data", code: "IF2150", time: "â€”", status: "Menunggu Verifikasi" },
-  { date: "Rabu, 15 Mei 2024", course: "Interaksi Manusia dan Komputer", code: "IF2160", time: "â€”", status: "Izin" },
-  { date: "Senin, 6 Mei 2024", course: "Pemrograman Berorientasi Objek", code: "IF2140", time: "â€”", status: "Sakit" },
+  { date: "Rabu, 22 Mei 2024", course: "Basis Data", code: "IF2150", time: "—", status: "Menunggu Verifikasi" },
+  { date: "Rabu, 15 Mei 2024", course: "Interaksi Manusia dan Komputer", code: "IF2160", time: "—", status: "Izin" },
+  { date: "Senin, 6 Mei 2024", course: "Pemrograman Berorientasi Objek", code: "IF2140", time: "—", status: "Sakit" },
   { date: "Senin, 20 Mei 2024", course: "Pemrograman Berorientasi Objek", code: "FIK-LAB 201", time: "07.56", status: "Hadir" },
   { date: "Jumat, 17 Mei 2024", course: "Metode Penelitian", code: "Dewi Sartika 301", time: "09.58", status: "Hadir" },
   { date: "Kamis, 16 Mei 2024", course: "Manajemen Proyek Perangkat Lunak", code: "FIK-LAB 302", time: "10.14", status: "Terlambat" },
-  { date: "Selasa, 14 Mei 2024", course: "Interaksi Manusia dan Komputer", code: "Dewi Sartika 303", time: "â€”", status: "Tidak hadir" },
+  { date: "Selasa, 14 Mei 2024", course: "Interaksi Manusia dan Komputer", code: "Dewi Sartika 303", time: "—", status: "Tidak hadir" },
   { date: "Senin, 13 Mei 2024", course: "Jaringan Komputer", code: "FIK-LAB 301", time: "08.02", status: "Hadir" },
   { date: "Jumat, 10 Mei 2024", course: "Metode Penelitian", code: "Dewi Sartika 301", time: "09.55", status: "Hadir" },
 ];
@@ -147,9 +147,9 @@ const initialLeaveRequests: LeaveRequest[] = [
 ];
 
 const lecturerClasses = [
-  { code: "IF2140", name: "Pemrograman Berorientasi Objek", group: "Kelas A", students: 38, attended: 34, time: "08.00 â€“ 09.40", room: "Lab Komputer 3", color: "blue" },
-  { code: "IF2150", name: "Metode Penelitian", group: "Kelas B", students: 42, attended: 39, time: "10.00 â€“ 11.40", room: "Gedung B â€¢ 203", color: "violet" },
-  { code: "IF2160", name: "Manajemen Proyek Perangkat Lunak", group: "Kelas A", students: 36, attended: 31, time: "13.00 â€“ 14.40", room: "Gedung C â€¢ 301", color: "amber" },
+  { code: "IF2140", name: "Pemrograman Berorientasi Objek", group: "Kelas A", students: 38, attended: 34, time: "08.00 – 09.40", room: "Lab Komputer 3", color: "blue" },
+  { code: "IF2150", name: "Metode Penelitian", group: "Kelas B", students: 42, attended: 39, time: "10.00 – 11.40", room: "Gedung B • 203", color: "violet" },
+  { code: "IF2160", name: "Manajemen Proyek Perangkat Lunak", group: "Kelas A", students: 36, attended: 31, time: "13.00 – 14.40", room: "Gedung C • 301", color: "amber" },
 ];
 
 const attendeeSeed = [
@@ -345,7 +345,7 @@ function Login({ onLogin }: { onLogin: (role: Role) => void }) {
             <div><div className="text-2xl font-bold">2 peran</div><div className="mt-1 text-xs text-blue-200">Mahasiswa & dosen</div></div>
           </div>
         </div>
-        <div className="text-xs text-blue-200">SmartAttend â€¢ Prototipe Akademik 2024</div>
+        <div className="text-xs text-blue-200">SmartAttend • Prototipe Akademik 2024</div>
       </div>
     </div>
     <div className="flex min-h-screen w-full items-center justify-center p-6 lg:w-1/2 lg:p-12">
@@ -443,7 +443,7 @@ function LeaveRequestForm({ navigate, onSubmit }: { navigate: (s: Screen) => voi
           {sent && <Feedback tone="success">Pengajuan berhasil dikirim dengan status <strong>Menunggu Persetujuan</strong>. Data hanya tersimpan selama sesi prototype ini.</Feedback>}
           <SelectField label="Mata kuliah *" value={courseCode} onChange={(value) => { setCourseCode(value); setSent(false); }}>
             <option value="">Pilih mata kuliah</option>
-            {studentCourses.map((course) => <option key={course.code} value={course.code}>{course.code} â€” {course.name}</option>)}
+            {studentCourses.map((course) => <option key={course.code} value={course.code}>{course.code} — {course.name}</option>)}
           </SelectField>
           <Field label="Tanggal ketidakhadiran *" type="date" value={absenceDate} onChange={(value) => { setAbsenceDate(value); setSent(false); }} />
           <SelectField label="Alasan *" value={reason} onChange={(value) => { setReason(value); setSent(false); }}>
@@ -488,9 +488,9 @@ function LeaveHistory({ requests, navigate, onSelect }: { requests: LeaveRequest
     <section className="mt-7 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-100 p-5"><div className="font-bold">Semua pengajuan</div><div className="mt-1 text-xs text-slate-400">{studentRequests.length} pengajuan dalam simulasi</div></div>
       <div className="divide-y divide-slate-100">{studentRequests.map((request) => <div key={request.id} className="grid gap-4 p-5 transition hover:bg-slate-50 md:grid-cols-[1.3fr_1fr_1fr_auto] md:items-center">
-        <div><div className="font-semibold text-slate-800">{request.course}</div><div className="mt-1 text-xs text-slate-400">{request.code} â€¢ {request.group}</div></div>
+        <div><div className="font-semibold text-slate-800">{request.course}</div><div className="mt-1 text-xs text-slate-400">{request.code} • {request.group}</div></div>
         <div><div className="text-xs text-slate-400">Tanggal ketidakhadiran</div><div className="mt-1 text-sm font-medium text-slate-700">{formatAbsenceDate(request.absenceDate)}</div></div>
-        <div><div className="text-xs text-slate-400">{request.reason} â€¢ diajukan {request.submittedAt}</div><div className="mt-2"><LeaveStatusBadge status={request.status} /></div></div>
+        <div><div className="text-xs text-slate-400">{request.reason} • diajukan {request.submittedAt}</div><div className="mt-2"><LeaveStatusBadge status={request.status} /></div></div>
         <Button variant="secondary" onClick={() => { onSelect(request.id); navigate("leave-detail-student"); }}>Lihat Detail <Icon name="chevron" size={15} /></Button>
       </div>)}</div>
     </section>
@@ -501,7 +501,7 @@ function StudentLeaveDetail({ request, navigate }: { request?: LeaveRequest; nav
   if (!request) return <div><Feedback tone="error">Pengajuan tidak ditemukan.</Feedback><Button onClick={() => navigate("leave-history")} className="mt-4">Kembali ke Riwayat</Button></div>;
   return <div>
     <Button variant="ghost" onClick={() => navigate("leave-history")} className="mb-5 !px-0"><Icon name="arrow" size={18} />Kembali ke riwayat</Button>
-    <PageHeading title="Detail pengajuan izin" description={`Pengajuan #${request.id} â€¢ dikirim ${request.submittedAt}`} action={<LeaveStatusBadge status={request.status} />} />
+    <PageHeading title="Detail pengajuan izin" description={`Pengajuan #${request.id} • dikirim ${request.submittedAt}`} action={<LeaveStatusBadge status={request.status} />} />
     <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
         <div className="grid gap-6 sm:grid-cols-2">
@@ -622,7 +622,7 @@ function LecturerDashboard({ navigate, leaveRequests }: { navigate: (s: Screen) 
     <div className="grid gap-4 sm:grid-cols-3">
       <StatCard icon="book" label="Kelas hari ini" value="3 Kelas" detail="116 mahasiswa terdaftar" tone="blue" />
       <StatCard icon="users" label="Hadir hari ini" value="104" detail="89,6% tingkat kehadiran" tone="emerald" />
-      <StatCard icon="live" label="Sesi aktif" value="1 Sesi" detail="IF2140 â€¢ berakhir 09.40" tone="amber" />
+      <StatCard icon="live" label="Sesi aktif" value="1 Sesi" detail="IF2140 • berakhir 09.40" tone="amber" />
     </div>
     <section className="mt-7 rounded-2xl border border-blue-100 bg-blue-50 p-5 md:p-6">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
@@ -658,9 +658,9 @@ function LecturerLeaveRequests({ requests, navigate, onSelect }: { requests: Lea
       <div className="flex flex-col gap-2 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between"><div><div className="font-bold">Daftar permohonan</div><div className="mt-1 text-xs text-slate-400">Hanya menampilkan kelas yang Anda ampu dalam simulasi</div></div><span className="text-xs font-semibold text-slate-500">{requests.length} pengajuan</span></div>
       <div className="divide-y divide-slate-100">{requests.map((request) => <div key={request.id} className="grid gap-4 p-5 transition hover:bg-slate-50 lg:grid-cols-[1.2fr_1.2fr_1fr_1fr_auto] lg:items-center">
         <div className="flex items-center gap-3"><Avatar initials={request.student.split(" ").map((part) => part[0]).slice(0, 2).join("")} small /><div><div className="text-sm font-semibold text-slate-800">{request.student}</div><div className="text-xs text-slate-400">{request.studentId}</div></div></div>
-        <div><div className="text-sm font-semibold text-slate-700">{request.course}</div><div className="mt-1 text-xs text-slate-400">{request.code} â€¢ {request.group}</div></div>
+        <div><div className="text-sm font-semibold text-slate-700">{request.course}</div><div className="mt-1 text-xs text-slate-400">{request.code} • {request.group}</div></div>
         <div><div className="text-xs text-slate-400">Ketidakhadiran</div><div className="mt-1 text-sm text-slate-700">{formatAbsenceDate(request.absenceDate)}</div></div>
-        <div><div className="text-xs text-slate-400">{request.reason} â€¢ {request.submittedAt}</div><div className="mt-2"><LeaveStatusBadge status={request.status} /></div></div>
+        <div><div className="text-xs text-slate-400">{request.reason} • {request.submittedAt}</div><div className="mt-2"><LeaveStatusBadge status={request.status} /></div></div>
         <Button variant="secondary" onClick={() => { onSelect(request.id); navigate("leave-detail-lecturer"); }}>Periksa <Icon name="chevron" size={15} /></Button>
       </div>)}</div>
     </section>
@@ -684,12 +684,12 @@ function LecturerLeaveDetail({ request, navigate, onDecision }: { request?: Leav
   };
   return <div>
     <Button variant="ghost" onClick={() => navigate("leave-requests")} className="mb-5 !px-0"><Icon name="arrow" size={18} />Kembali ke permohonan</Button>
-    <PageHeading title="Detail pengajuan izin" description={`Permohonan #${request.id} â€¢ diajukan ${request.submittedAt}`} action={<LeaveStatusBadge status={request.status} />} />
+    <PageHeading title="Detail pengajuan izin" description={`Permohonan #${request.id} • diajukan ${request.submittedAt}`} action={<LeaveStatusBadge status={request.status} />} />
     <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
         <div className="mb-6 flex items-center gap-4 border-b border-slate-100 pb-6"><Avatar initials={request.student.split(" ").map((part) => part[0]).slice(0, 2).join("")} /><div><div className="font-bold text-slate-900">{request.student}</div><div className="mt-1 text-xs text-slate-400">NIM {request.studentId}</div></div></div>
         <div className="grid gap-6 sm:grid-cols-2">
-          <InfoItem label="Mata kuliah dan kelas" value={`${request.course} â€¢ ${request.code} â€¢ ${request.group}`} />
+          <InfoItem label="Mata kuliah dan kelas" value={`${request.course} • ${request.code} • ${request.group}`} />
           <InfoItem label="Tanggal ketidakhadiran" value={formatAbsenceDate(request.absenceDate)} />
           <InfoItem label="Alasan pengajuan" value={request.reason} />
           <InfoItem label="Dokumen pendukung" value={request.attachment || "Tidak ada dokumen terlampir."} />
@@ -714,7 +714,7 @@ function ClassCard({ course, active, onLive, onCreate }: { course: typeof lectur
   const tones: Record<string, string> = { blue: "bg-blue-50 text-blue-700", violet: "bg-violet-50 text-violet-700", amber: "bg-amber-50 text-amber-700" };
   return <div className="rounded-xl border border-slate-200 p-5 transition hover:-translate-y-0.5 hover:shadow-md">
     <div className="flex items-start justify-between"><span className={`rounded-lg px-2.5 py-1 text-xs font-bold ${tones[course.color]}`}>{course.code}</span>{active && <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-600"><span className="size-2 animate-pulse rounded-full bg-emerald-500" />Sedang berlangsung</span>}</div>
-    <div className="mt-4 text-base font-bold">{course.name}</div><div className="mt-1 text-xs text-slate-400">{course.group} â€¢ {course.students} mahasiswa</div>
+    <div className="mt-4 text-base font-bold">{course.name}</div><div className="mt-1 text-xs text-slate-400">{course.group} • {course.students} mahasiswa</div>
     <div className="mt-4 space-y-2 border-t border-slate-100 pt-4 text-xs text-slate-500"><div className="flex gap-2"><Icon name="clock" size={15} />{course.time}</div><div className="flex gap-2"><Icon name="calendar" size={15} />{course.room}</div></div>
     <div className="mt-5 flex items-center justify-between"><div><span className="text-xl font-bold">{course.attended}</span><span className="text-xs text-slate-400">/{course.students} hadir</span></div><Button variant={active ? "primary" : "secondary"} onClick={active ? onLive : onCreate} className="!py-2">{active ? "Pantau Live" : "Buat Sesi"}</Button></div>
   </div>;
@@ -734,15 +734,15 @@ function CreateSession({ navigate, onCreate }: { navigate: (s: Screen) => void; 
       <form onSubmit={generate} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
         <div className="mb-6 flex items-center gap-3 border-b border-slate-100 pb-5"><div className="grid size-10 place-items-center rounded-xl bg-blue-50 text-blue-600"><Icon name="calendar" size={20} /></div><div><div className="font-bold">Detail sesi</div><div className="text-xs text-slate-400">Pastikan informasi kelas sudah sesuai</div></div></div>
         <div className="space-y-5">
-          <SelectField label="Mata kuliah" value={course} onChange={setCourse}><option value="IF2140">IF2140 â€” Pemrograman Berorientasi Objek</option><option value="IF2150">IF2150 â€” Basis Data</option><option value="IF2160">IF2160 â€” Interaksi Manusia Komputer</option></SelectField>
-          <div className="grid gap-5 sm:grid-cols-2"><Field label="Pertemuan ke-" value={meeting} onChange={setMeeting} /><SelectField label="Kelas" value="A" onChange={() => { }}><option>A â€” Reguler</option><option>B â€” Reguler</option></SelectField></div>
+          <SelectField label="Mata kuliah" value={course} onChange={setCourse}><option value="IF2140">IF2140 — Pemrograman Berorientasi Objek</option><option value="IF2150">IF2150 — Basis Data</option><option value="IF2160">IF2160 — Interaksi Manusia Komputer</option></SelectField>
+          <div className="grid gap-5 sm:grid-cols-2"><Field label="Pertemuan ke-" value={meeting} onChange={setMeeting} /><SelectField label="Kelas" value="A" onChange={() => { }}><option>A — Reguler</option><option>B — Reguler</option></SelectField></div>
           <div className="grid gap-5 sm:grid-cols-2"><Field label="Waktu mulai" type="time" value={start} onChange={setStart} /><Field label="Waktu selesai" type="time" value={end} onChange={setEnd} /></div>
           <div className="rounded-xl bg-slate-50 p-4"><label className="flex items-start gap-3"><input type="checkbox" defaultChecked className="mt-0.5 size-4 accent-blue-600" /><span><span className="block text-sm font-semibold text-slate-700">Validasi waktu otomatis</span><span className="mt-1 block text-xs leading-5 text-slate-500">QR akan kedaluwarsa setelah waktu selesai dan presensi ganda akan ditolak.</span></span></label></div>
           <Button type="submit" className="w-full !py-3.5"><Icon name="qr" size={19} />Buat & Tampilkan QR</Button>
         </div>
       </form>
       <aside className={`rounded-2xl p-6 text-center transition-all ${generated ? "border border-blue-200 bg-blue-50" : "border border-dashed border-slate-300 bg-white"}`}>
-        {generated ? <><div className="mx-auto flex w-fit items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700"><span className="size-2 animate-pulse rounded-full bg-emerald-500" />Sesi aktif</div><div className="mx-auto mt-5 w-fit"><FakeQR small /></div><div className="mt-5 font-bold">Pemrograman Berorientasi Objek</div><div className="mt-1 text-xs text-slate-500">Pertemuan {meeting} â€¢ Kelas A</div><div className="mt-4 flex items-center justify-center gap-2 text-sm font-semibold text-blue-700"><Icon name="clock" size={17} />{start} â€“ {end} WIB</div><Button onClick={() => navigate("live")} className="mt-6 w-full">Pantau Presensi Live <Icon name="chevron" size={17} /></Button></> : <div className="flex min-h-80 flex-col items-center justify-center"><div className="grid size-16 place-items-center rounded-2xl bg-slate-100 text-slate-400"><Icon name="qr" size={30} /></div><div className="mt-5 font-bold text-slate-700">QR belum dibuat</div><p className="mt-2 max-w-xs text-xs leading-5 text-slate-400">Lengkapi detail sesi, lalu tekan tombol buat untuk menghasilkan kode QR demo.</p></div>}
+        {generated ? <><div className="mx-auto flex w-fit items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700"><span className="size-2 animate-pulse rounded-full bg-emerald-500" />Sesi aktif</div><div className="mx-auto mt-5 w-fit"><FakeQR small /></div><div className="mt-5 font-bold">Pemrograman Berorientasi Objek</div><div className="mt-1 text-xs text-slate-500">Pertemuan {meeting} • Kelas A</div><div className="mt-4 flex items-center justify-center gap-2 text-sm font-semibold text-blue-700"><Icon name="clock" size={17} />{start} – {end} WIB</div><Button onClick={() => navigate("live")} className="mt-6 w-full">Pantau Presensi Live <Icon name="chevron" size={17} /></Button></> : <div className="flex min-h-80 flex-col items-center justify-center"><div className="grid size-16 place-items-center rounded-2xl bg-slate-100 text-slate-400"><Icon name="qr" size={30} /></div><div className="mt-5 font-bold text-slate-700">QR belum dibuat</div><p className="mt-2 max-w-xs text-xs leading-5 text-slate-400">Lengkapi detail sesi, lalu tekan tombol buat untuk menghasilkan kode QR demo.</p></div>}
       </aside>
     </div>
   </div>;
@@ -754,7 +754,7 @@ function LiveAttendance({ navigate, sessionCreated, leaveRequests }: { navigate:
   const attendees = useMemo(() => attendeeSeed.filter((x) => x.name.toLowerCase().includes(query.toLowerCase()) || x.id.includes(query)), [query]);
   return <div>
     <Button variant="ghost" onClick={() => navigate("lecturer-dashboard")} className="mb-5 !px-0"><Icon name="arrow" size={18} />Kembali ke beranda</Button>
-    <PageHeading title="Presensi Pemrograman Berorientasi Objek" description="IF2140 â€¢ Pertemuan 12 â€¢ Senin, 20 Mei 2024" action={<div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700"><span className="size-2 animate-pulse rounded-full bg-emerald-500" />{sessionCreated ? "Sesi aktif" : "Sesi demo aktif"} â€¢ 32:18</div>} />
+    <PageHeading title="Presensi Pemrograman Berorientasi Objek" description="IF2140 • Pertemuan 12 • Senin, 20 Mei 2024" action={<div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700"><span className="size-2 animate-pulse rounded-full bg-emerald-500" />{sessionCreated ? "Sesi aktif" : "Sesi demo aktif"} • 32:18</div>} />
     <div className="mb-6 flex w-fit rounded-xl bg-slate-100 p-1"><Button variant="ghost" onClick={() => setTab("live")} className={tab === "live" ? "!bg-white !text-blue-700 shadow-sm" : ""}><Icon name="live" size={17} />Daftar Live</Button><Button variant="ghost" onClick={() => setTab("recap")} className={tab === "recap" ? "!bg-white !text-blue-700 shadow-sm" : ""}><Icon name="history" size={17} />Rekap Presensi</Button></div>
     {tab === "live" ? <div className="grid gap-6 xl:grid-cols-[1fr_19rem]">
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -782,12 +782,12 @@ function Recap({ leaveRequests }: { leaveRequests: LeaveRequest[] }) {
     <div className="grid gap-4 sm:grid-cols-3">{recap.map((x) => <div key={x.label} className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-center justify-between"><div className={`grid size-10 place-items-center rounded-xl ${x.box}`}><Icon name={x.label === "Hadir" ? "check" : x.label === "Terlambat" ? "clock" : "x"} size={19} /></div><span className="text-sm font-bold text-slate-400">{x.pct}</span></div><div className="mt-4 text-3xl font-bold">{x.value}</div><div className="mt-1 text-sm text-slate-500">{x.label}</div></div>)}</div>
     <section className="rounded-2xl border border-slate-200 bg-white p-6">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-lg font-bold">Izin dan sakit terverifikasi</div><p className="mt-1 text-sm text-slate-500">Berasal dari pengajuan yang telah disetujui dosen.</p></div><div className="flex gap-3"><div className="rounded-xl bg-blue-50 px-4 py-3 text-center"><div className="text-xl font-bold text-blue-700">{approvedLeave}</div><div className="text-xs text-blue-600">Izin</div></div><div className="rounded-xl bg-violet-50 px-4 py-3 text-center"><div className="text-xl font-bold text-violet-700">{approvedSick}</div><div className="text-xs text-violet-600">Sakit</div></div></div></div>
-      <div className="mt-5 divide-y divide-slate-100 border-t border-slate-100">{leaveRequests.filter((request) => request.status === "Disetujui").map((request) => <div key={request.id} className="grid gap-3 py-4 sm:grid-cols-[1.2fr_1fr_auto] sm:items-center"><div><div className="text-sm font-semibold">{request.student}</div><div className="text-xs text-slate-400">{request.studentId} â€¢ {request.course}</div></div><div className="text-sm text-slate-600">{formatAbsenceDate(request.absenceDate)}</div><StatusPill status={request.reason === "Sakit" ? "Sakit" : "Izin"} /></div>)}</div>
+      <div className="mt-5 divide-y divide-slate-100 border-t border-slate-100">{leaveRequests.filter((request) => request.status === "Disetujui").map((request) => <div key={request.id} className="grid gap-3 py-4 sm:grid-cols-[1.2fr_1fr_auto] sm:items-center"><div><div className="text-sm font-semibold">{request.student}</div><div className="text-xs text-slate-400">{request.studentId} • {request.course}</div></div><div className="text-sm text-slate-600">{formatAbsenceDate(request.absenceDate)}</div><StatusPill status={request.reason === "Sakit" ? "Sakit" : "Izin"} /></div>)}</div>
     </section>
     <section className="rounded-2xl border border-slate-200 bg-white p-6">
       <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center"><div><div className="text-lg font-bold">Ringkasan sesi</div><p className="mt-1 text-sm text-slate-500">Distribusi status kehadiran pertemuan 12</p></div><Button variant="secondary">Unduh rekap CSV</Button></div>
       <div className="mt-8 space-y-5">{recap.map((x) => <div key={x.label}><div className="mb-2 flex justify-between text-sm"><span className="font-medium text-slate-600">{x.label}</span><span className="font-bold">{x.value} mahasiswa</span></div><div className="h-2.5 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${x.color}`} style={{ width: x.pct }} /></div></div>)}</div>
-      <div className="mt-8 grid gap-4 border-t border-slate-100 pt-6 sm:grid-cols-3"><div><div className="text-xs text-slate-400">Waktu sesi</div><div className="mt-1 text-sm font-semibold">08.00 â€“ 09.40 WIB</div></div><div><div className="text-xs text-slate-400">Kehadiran pertama</div><div className="mt-1 text-sm font-semibold">07.54 â€¢ Nadia Putri</div></div><div><div className="text-xs text-slate-400">Rata-rata waktu scan</div><div className="mt-1 text-sm font-semibold">8,4 detik</div></div></div>
+      <div className="mt-8 grid gap-4 border-t border-slate-100 pt-6 sm:grid-cols-3"><div><div className="text-xs text-slate-400">Waktu sesi</div><div className="mt-1 text-sm font-semibold">08.00 – 09.40 WIB</div></div><div><div className="text-xs text-slate-400">Kehadiran pertama</div><div className="mt-1 text-sm font-semibold">07.54 • Nadia Putri</div></div><div><div className="text-xs text-slate-400">Rata-rata waktu scan</div><div className="mt-1 text-sm font-semibold">8,4 detik</div></div></div>
     </section>
   </div>;
 }
@@ -831,7 +831,7 @@ export default function App() {
     };
     setLeaveRequests((requests) => [request, ...requests]);
     setSelectedLeaveId(id);
-    const pendingRecord = { date: formatAbsenceDate(data.absenceDate), course: course.name, code: course.code, time: "â€”", status: "Menunggu Verifikasi" };
+    const pendingRecord = { date: formatAbsenceDate(data.absenceDate), course: course.name, code: course.code, time: "—", status: "Menunggu Verifikasi" };
     setHistory((rows) => {
       const existing = rows.findIndex((row) => row.date === pendingRecord.date && row.code === pendingRecord.code);
       return existing >= 0 ? rows.map((row, index) => index === existing ? pendingRecord : row) : [pendingRecord, ...rows];
@@ -842,7 +842,7 @@ export default function App() {
     if (!request) return;
     setLeaveRequests((requests) => requests.map((item) => item.id === id ? { ...item, status, lecturerNote } : item));
     const attendanceStatus = status === "Disetujui" ? (request.reason === "Sakit" ? "Sakit" : "Izin") : "Tidak hadir";
-    const attendanceRecord = { date: formatAbsenceDate(request.absenceDate), course: request.course, code: request.code, time: "â€”", status: attendanceStatus };
+    const attendanceRecord = { date: formatAbsenceDate(request.absenceDate), course: request.course, code: request.code, time: "—", status: attendanceStatus };
     setHistory((rows) => {
       const existing = rows.findIndex((row) => row.date === attendanceRecord.date && row.code === attendanceRecord.code);
       return existing >= 0 ? rows.map((row, index) => index === existing ? attendanceRecord : row) : [attendanceRecord, ...rows];
