@@ -1,0 +1,10 @@
+{
+  "description": "Streamline university attendance tracking with a QR code system, offering students and lecturers an interactive dashboard for managing attendance efficiently.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
