@@ -1,4 +1,25 @@
-import { FormEvent, ReactNode, useMemo, useState } from "react";
+﻿import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import QRCode from "qrcode";
+import { Html5Qrcode } from "html5-qrcode";
+import { supabase } from "./lib/supabase";
+import { getCurrentProfile, signInWithSupabase, signOutFromSupabase, signUpWithSupabase, UserProfile } from "./lib/auth";
+import { CourseScheduleItem, createCourseAndSection, fetchAllAvailableSections, fetchLecturerSections, fetchStudentCourses, toggleStudentEnrollment } from "./lib/courses";
+import {
+  createLeaveRequestInDb,
+  decideLeaveRequestInDb,
+  fetchLecturerLeaveRequests,
+  fetchStudentLeaveRequests,
+} from "./lib/leave";
+import {
+  ActiveSessionInfo,
+  closeAttendanceSession,
+  createAttendanceSession,
+  fetchLatestActiveSession,
+  fetchSessionAttendees,
+  fetchStudentAttendanceHistory,
+  LiveAttendeeItem,
+  submitStudentCheckIn,
+} from "./lib/attendance";
 
 type Role = "student" | "lecturer";
 type Screen =
@@ -17,7 +38,7 @@ type Screen =
 type LeaveReason = "Sakit" | "Izin Keperluan Lain" | "Keperluan Keluarga";
 type LeaveStatus = "Menunggu Persetujuan" | "Disetujui" | "Ditolak";
 type LeaveRequest = {
-  id: number;
+  id: string | number;
   student: string;
   studentId: string;
   course: string;
@@ -265,7 +286,9 @@ function Avatar({ initials, tone = "blue", small = false }: { initials: string; 
   return <div className={`grid shrink-0 place-items-center rounded-full font-bold ${small ? "size-9 text-xs" : "size-11 text-sm"} ${tones[tone]}`}>{initials}</div>;
 }
 
-function Sidebar({ role, screen, navigate, switchRole }: { role: Role; screen: Screen; navigate: (s: Screen) => void; switchRole: () => void }) {
+function Sidebar({ role, screen, navigate, switchRole, profile, onLogout }: { role: Role; screen: Screen; navigate: (s: Screen) => void; switchRole: () => void; profile: UserProfile | null; onLogout: () => void }) {
+  const displayName = profile?.full_name || (role === "student" ? "Agoy Salloh" : "Dr. Bima Santoso");
+  const initials = displayName.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
   const studentNav = [
     { label: "Beranda", icon: "dashboard" as IconName, screen: "student-dashboard" as Screen },
     { label: "Scan QR", icon: "camera" as IconName, screen: "scan" as Screen },
@@ -288,11 +311,11 @@ function Sidebar({ role, screen, navigate, switchRole }: { role: Role; screen: S
       </nav>
       <div className="mt-auto border-t border-slate-100 pt-5">
         <Button variant="ghost" onClick={switchRole} className="w-full !justify-start !px-3">
-          <Avatar initials={role === "student" ? "AS" : "PA"} small />
-          <span className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-semibold text-slate-800">{role === "student" ? "Agoy Salloh" : "Pak Andra"}</span><span className="block text-xs font-normal text-slate-400">Ganti ke {role === "student" ? "Dosen" : "Mahasiswa"}</span></span>
+          <Avatar initials={initials} small />
+          <span className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-semibold text-slate-800">{displayName}</span><span className="block text-xs font-normal text-slate-400">Ganti ke {role === "student" ? "Dosen" : "Mahasiswa"}</span></span>
           <Icon name="chevron" size={16} />
         </Button>
-        <Button variant="ghost" onClick={() => navigate("login")} className="mt-1 w-full !justify-start !px-3 text-slate-500"><Icon name="logout" size={18} />Keluar dari demo</Button>
+        <Button variant="ghost" onClick={onLogout} className="mt-1 w-full !justify-start !px-3 text-slate-500"><Icon name="logout" size={18} />Keluar</Button>
       </div>
     </aside>
     <nav className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-slate-200 bg-white/95 px-2 py-2 backdrop-blur lg:hidden">
@@ -301,19 +324,22 @@ function Sidebar({ role, screen, navigate, switchRole }: { role: Role; screen: S
   </>;
 }
 
-function Topbar({ title, role, onSwitch }: { title: string; role: Role; onSwitch: () => void }) {
+function Topbar({ title, role, onSwitch, profile, onLogout }: { title: string; role: Role; onSwitch: () => void; profile: UserProfile | null; onLogout: () => void }) {
+  const displayName = profile?.full_name || (role === "student" ? "Agoy Salloh" : "Dr. Bima Santoso");
+  const initials = displayName.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
   return <header className={`sticky top-0 z-20 flex h-16 border-b border-slate-200/80 bg-white/90 px-5 backdrop-blur md:px-8 items-center justify-between w-full`}>
     <div className="flex items-center gap-3 lg:hidden"><Logo compact /><span className="font-bold text-slate-900">{title}</span></div>
     <div className="hidden lg:block text-sm font-semibold text-slate-500">{title}</div>
     <div className="flex items-center gap-2">
       <Button variant="ghost" className="!size-10 !p-0"><Icon name="bell" size={19} /></Button>
-      <Button variant="secondary" onClick={onSwitch} className="hidden sm:inline-flex !rounded-full !py-2"><Avatar initials={role === "student" ? "AS" : "PA"} small /><span>{role === "student" ? "Mahasiswa" : "Dosen"}</span><Icon name="chevron" size={15} /></Button>
+      <Button variant="secondary" onClick={onSwitch} className="hidden sm:inline-flex !rounded-full !py-2"><Avatar initials={initials} small /><span>{role === "student" ? "Mahasiswa" : "Dosen"}</span><Icon name="chevron" size={15} /></Button>
+      <Button variant="ghost" onClick={onLogout} className="!px-3 !py-2 text-slate-500 hover:text-red-600"><Icon name="logout" size={18} /><span className="hidden sm:inline">Keluar</span></Button>
     </div>
   </header>;
 }
 
-function AppShell({ children, role, screen, navigate, title, switchRole }: { children: ReactNode; role: Role; screen: Screen; navigate: (s: Screen) => void; title: string; switchRole: () => void }) {
-  return <div className="min-h-screen bg-slate-50 text-slate-900"><Sidebar role={role} screen={screen} navigate={navigate} switchRole={switchRole} /><div className="lg:pl-64"><Topbar role={role} title={title} onSwitch={switchRole} /><main className="mx-auto max-w-7xl px-5 py-7 pb-28 md:px-8 md:py-9 lg:pb-10">{children}</main></div></div>;
+function AppShell({ children, role, screen, navigate, title, switchRole, profile, onLogout }: { children: ReactNode; role: Role; screen: Screen; navigate: (s: Screen) => void; title: string; switchRole: () => void; profile: UserProfile | null; onLogout: () => void }) {
+  return <div className="min-h-screen bg-slate-50 text-slate-900"><Sidebar role={role} screen={screen} navigate={navigate} switchRole={switchRole} profile={profile} onLogout={onLogout} /><div className="lg:pl-64"><Topbar role={role} title={title} onSwitch={switchRole} profile={profile} onLogout={onLogout} /><main className="mx-auto max-w-7xl px-5 py-7 pb-28 md:px-8 md:py-9 lg:pb-10">{children}</main></div></div>;
 }
 
 function PageHeading({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description: string; action?: ReactNode }) {
@@ -323,63 +349,204 @@ function PageHeading({ eyebrow, title, description, action }: { eyebrow?: string
   </div>;
 }
 
-function Login({ onLogin }: { onLogin: (role: Role) => void }) {
+const DEMO_LECTURERS = [
+  { label: "Dr. Desta Sandya Prasvita (Metlit, PBO)", email: "desta.sandya@dosen.upnvj.ac.id" },
+  { label: "Sanggi Bayu Ardika (IMK)", email: "sanggi.bayu@dosen.upnvj.ac.id" },
+  { label: "I Wayan Rangga Pinastawa (Sistem Operasi)", email: "wayan.rangga@dosen.upnvj.ac.id" },
+  { label: "Henki Bayu Seta (Keamanan Siber)", email: "henki.bayu@dosen.upnvj.ac.id" },
+  { label: "Dr. Widya Cholil (MPPL)", email: "widya.cholil@dosen.upnvj.ac.id" },
+  { label: "Dr. Mayanda Mega Santoni (Kompleksitas Algo)", email: "mayanda.mega@dosen.upnvj.ac.id" },
+  { label: "Dr. Indra Permana Solihin (Jaringan Komputer)", email: "indra.permana@dosen.upnvj.ac.id" },
+];
+
+function Login({ onLogin }: { onLogin: (profile: UserProfile) => void }) {
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [role, setRole] = useState<Role>("student");
+  const [fullName, setFullName] = useState("");
+  const [studentNumber, setStudentNumber] = useState("");
+  const [department, setDepartment] = useState("S1 Informatika - FIK UPNVJ");
   const [email, setEmail] = useState("2510511009@mahasiswa.upnvj.ac.id");
-  const [password, setPassword] = useState("demo12345");
-  const submit = (e: FormEvent) => { e.preventDefault(); onLogin(role); };
+  const [password, setPassword] = useState("demo1234");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      if (authMode === "register") {
+        if (!fullName.trim() || !studentNumber.trim() || !email.trim() || password.length < 6) {
+          throw new Error("Lengkapi nama, NIM/NIP, email, dan kata sandi minimal 6 karakter.");
+        }
+        const profile = await signUpWithSupabase({
+          fullName,
+          studentNumber,
+          role,
+          department,
+          email,
+          password,
+        });
+        onLogin(profile);
+      } else {
+        const profile = await signInWithSupabase(email, password);
+        onLogin(profile);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Gagal memproses autentikasi.";
+      setError(message.includes("Invalid login credentials") ? "Email atau kata sandi salah." : message);
+    } finally {
+      setLoading(false);
+    }
+  };
   return <div className="relative min-h-screen overflow-hidden bg-slate-50">
     <div className="absolute inset-y-0 right-0 hidden w-1/2 overflow-hidden bg-blue-700 lg:block">
       <div className="absolute -right-32 -top-32 size-[34rem] rounded-full border border-white/10" />
       <div className="absolute -right-12 -top-12 size-[22rem] rounded-full border border-white/10" />
       <div className="absolute -bottom-32 -left-32 size-[30rem] rounded-full bg-blue-600" />
       <div className="relative z-10 flex h-full flex-col justify-between p-16 text-white">
-        <div className="flex items-center gap-3 text-sm font-semibold text-blue-100"><Icon name="shield" />Simulasi akademik yang aman</div>
+        <div className="flex items-center gap-3 text-sm font-semibold text-blue-100"><Icon name="shield" />Fakultas Ilmu Komputer • UPNVJ</div>
         <div className="max-w-lg">
           <div className="mb-8 grid size-20 place-items-center rounded-3xl bg-white/10 ring-1 ring-white/20 backdrop-blur"><Icon name="qr" size={42} /></div>
           <div className="text-4xl font-bold leading-tight">Presensi kampus,<br />lebih cepat dan transparan.</div>
-          <p className="mt-5 max-w-md text-base leading-7 text-blue-100">Kelola kehadiran perkuliahan melalui kode QR dalam satu platform yang ringkas dan mudah digunakan.</p>
+          <p className="mt-5 max-w-md text-base leading-7 text-blue-100">Terintegrasi dengan jadwal kuliah Senin–Jumat dan plotting dosen pengampu masing-masing mata kuliah.</p>
           <div className="mt-10 flex gap-8 border-t border-white/15 pt-8">
-            <div><div className="text-2xl font-bold">10 dtk</div><div className="mt-1 text-xs text-blue-200">Rata-rata presensi</div></div>
-            <div><div className="text-2xl font-bold">100%</div><div className="mt-1 text-xs text-blue-200">Data lokal demo</div></div>
-            <div><div className="text-2xl font-bold">2 peran</div><div className="mt-1 text-xs text-blue-200">Mahasiswa & dosen</div></div>
+            <div><div className="text-2xl font-bold">11 Matkul</div><div className="mt-1 text-xs text-blue-200">Teori & Praktikum</div></div>
+            <div><div className="text-2xl font-bold">7 Dosen</div><div className="mt-1 text-xs text-blue-200">Plotting SIAKAD</div></div>
+            <div><div className="text-2xl font-bold">Real-Time</div><div className="mt-1 text-xs text-blue-200">Scan QR langsung</div></div>
           </div>
         </div>
-        <div className="text-xs text-blue-200">SmartAttend • Prototipe Akademik 2024</div>
+        <div className="text-xs text-blue-200">SmartAttend • Sistem Presensi Akademik FIK UPNVJ</div>
       </div>
     </div>
-    <div className="flex min-h-screen w-full items-center justify-center p-6 lg:w-1/2 lg:p-12">
+    <div className="flex min-h-screen w-full items-center justify-center p-6 lg:w-1/2 lg:p-10">
       <div className="w-full max-w-md">
         <Logo />
-        <div className="mt-12">
-          <div className="text-3xl font-bold tracking-tight text-slate-900">Selamat datang kembali</div>
-          <p className="mt-2 text-sm leading-6 text-slate-500">Masuk untuk mengakses sistem presensi SmartAttend.</p>
-        </div>
-        <div className="mt-8 rounded-xl bg-slate-100 p-1">
-          <div className="grid grid-cols-2 gap-1">
-            <Button variant="ghost" onClick={() => { setRole("student"); setEmail("nadia.ramadhani@mahasiswa.ac.id"); }} className={`!py-2.5 ${role === "student" ? "!bg-white !text-blue-700 shadow-sm" : ""}`}><Icon name="user" size={17} />Mahasiswa</Button>
-            <Button variant="ghost" onClick={() => { setRole("lecturer"); setEmail("bima.santoso@dosen.ac.id"); }} className={`!py-2.5 ${role === "lecturer" ? "!bg-white !text-blue-700 shadow-sm" : ""}`}><Icon name="book" size={17} />Dosen</Button>
+        <div className="mt-8 flex items-center justify-between gap-4">
+          <div>
+            <div className="text-2xl font-bold tracking-tight text-slate-900">{authMode === "login" ? "Selamat datang kembali" : "Buat akun baru"}</div>
+            <p className="mt-1 text-sm text-slate-500">{authMode === "login" ? "Masuk ke portal SmartAttend." : "Daftarkan akun mahasiswa atau dosen baru."}</p>
+          </div>
+          <div className="flex rounded-xl bg-slate-100 p-1 text-xs font-semibold">
+            <button type="button" onClick={() => { setAuthMode("login"); setPassword("demo1234"); setError(""); }} className={`rounded-lg px-3 py-1.5 transition ${authMode === "login" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600"}`}>Masuk</button>
+            <button type="button" onClick={() => { setAuthMode("register"); setEmail(""); setPassword("demo1234"); setError(""); }} className={`rounded-lg px-3 py-1.5 transition ${authMode === "register" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600"}`}>Daftar</button>
           </div>
         </div>
-        <form onSubmit={submit} className="mt-7 space-y-5">
-          <Field label="Email institusi" icon="user" type="email" value={email} onChange={setEmail} />
-          <Field label="Kata sandi" icon="shield" type="password" value={password} onChange={setPassword} />
-          <div className="flex items-center justify-between text-sm"><label className="flex items-center gap-2 text-slate-600"><input type="checkbox" defaultChecked className="size-4 rounded border-slate-300 accent-blue-600" />Ingat saya</label><span className="font-semibold text-blue-600">Lupa kata sandi?</span></div>
-          <Button type="submit" className="w-full !py-3.5">Masuk sebagai {role === "student" ? "Mahasiswa" : "Dosen"}<Icon name="chevron" size={18} /></Button>
+        <div className="mt-6 rounded-xl bg-slate-100 p-1">
+          <div className="grid grid-cols-2 gap-1">
+            <Button variant="ghost" onClick={() => { setRole("student"); if (authMode === "login") setEmail("2510511009@mahasiswa.upnvj.ac.id"); }} className={`!py-2.5 ${role === "student" ? "!bg-white !text-blue-700 shadow-sm" : ""}`}><Icon name="user" size={17} />Mahasiswa</Button>
+            <Button variant="ghost" onClick={() => { setRole("lecturer"); if (authMode === "login") setEmail(DEMO_LECTURERS[0].email); }} className={`!py-2.5 ${role === "lecturer" ? "!bg-white !text-blue-700 shadow-sm" : ""}`}><Icon name="book" size={17} />Dosen</Button>
+          </div>
+        </div>
+        <form onSubmit={submit} className="mt-5 space-y-4">
+          {error && <Feedback tone="error">{error}</Feedback>}
+          {authMode === "login" && role === "lecturer" && (
+            <SelectField label="Pilih Akun Dosen Pengampu (Simulasi)" value={email} onChange={setEmail}>
+              {DEMO_LECTURERS.map((d) => (
+                <option key={d.email} value={d.email}>{d.label}</option>
+              ))}
+            </SelectField>
+          )}
+          {authMode === "register" && <>
+            <Field label="Nama lengkap" icon="user" value={fullName} onChange={setFullName} placeholder="Masukkan nama lengkap" />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label={role === "student" ? "NIM" : "NIP / NIDN"} value={studentNumber} onChange={setStudentNumber} placeholder="25105110xx" />
+              <SelectField label="Program Studi" value={department} onChange={setDepartment}>
+                <option value="S1 Informatika - FIK UPNVJ">S1 Informatika</option>
+                <option value="S1 Sistem Informasi - FIK UPNVJ">S1 Sistem Informasi</option>
+                <option value="S1 Sains Data - FIK UPNVJ">S1 Sains Data</option>
+                <option value="D3 Sistem Informasi - FIK UPNVJ">D3 Sistem Informasi</option>
+              </SelectField>
+            </div>
+          </>}
+          <Field label="Email institusi" icon="user" type="email" value={email} onChange={setEmail} placeholder="nama@upnvj.ac.id" />
+          <Field label="Kata sandi" icon="shield" type="password" value={password} onChange={setPassword} placeholder="Minimal 6 karakter" />
+          <Button type="submit" disabled={loading} className="w-full !py-3.5">{loading ? "Memproses..." : authMode === "login" ? `Masuk sebagai ${role === "student" ? "Mahasiswa" : "Dosen"}` : `Daftar & Masuk sebagai ${role === "student" ? "Mahasiswa" : "Dosen"}`}<Icon name="chevron" size={18} /></Button>
         </form>
-        <div className="mt-6 flex gap-3 rounded-xl border border-blue-100 bg-blue-50 p-4 text-xs leading-5 text-blue-800"><Icon name="info" size={18} className="mt-0.5 shrink-0" /><span>Ini adalah demo prototype interactive. seluruh data merupakan dummy dan tidak ada data yang dikirim ke sistem universitas.</span></div>
       </div>
     </div>
   </div>;
 }
+function StudentDashboard({ navigate, attendanceCount, leaveRequests, courses, profile, onRefreshCourses }: { navigate: (s: Screen) => void; attendanceCount: number; leaveRequests: LeaveRequest[]; courses: CourseScheduleItem[]; profile: UserProfile | null; onRefreshCourses?: () => Promise<void> }) {
+  const [catalog, setCatalog] = useState<CourseScheduleItem[]>([]);
+  const [showCatalog, setShowCatalog] = useState(false);
+  const [enrollingId, setEnrollingId] = useState<string | null>(null);
+  const [selectedDay, setSelectedDay] = useState<string>("Semua");
 
-function StudentDashboard({ navigate, attendanceCount, leaveRequests }: { navigate: (s: Screen) => void; attendanceCount: number; leaveRequests: LeaveRequest[] }) {
-  const pending = leaveRequests.filter((request) => request.studentId === "2510511009" && request.status === "Menunggu Persetujuan").length;
+  useEffect(() => {
+    fetchAllAvailableSections().then(setCatalog);
+  }, [courses]);
+
+  const handleToggleEnroll = async (sectionId: string, alreadyEnrolled: boolean) => {
+    if (!profile) return;
+    setEnrollingId(sectionId);
+    try {
+      await toggleStudentEnrollment({
+        studentId: profile.id,
+        sectionId,
+        enroll: !alreadyEnrolled,
+      });
+      if (onRefreshCourses) await onRefreshCourses();
+      const updated = await fetchAllAvailableSections();
+      setCatalog(updated);
+    } finally {
+      setEnrollingId(null);
+    }
+  };
+
+  const enrolledIds = new Set(courses.map((c) => c.sectionId));
+  const rawCourses = courses.length > 0 ? courses : studentCourses.map((c) => ({ ...c, dayOfWeek: "Senin", department: profile?.department || "Informatika", lecturerName: "Dosen Pengampu" }));
+  const displayCourses = selectedDay === "Semua"
+    ? rawCourses
+    : rawCourses.filter((c: any) => (c.dayOfWeek || "Senin") === selectedDay);
+  const firstName = profile?.full_name ? profile.full_name.split(" ")[0] : "Agoy";
+  const deptLabel = profile?.department || "Informatika";
+  const pending = leaveRequests.filter((request) => request.studentId === (profile?.student_number || "2510511009") && request.status === "Menunggu Persetujuan").length;
   return <div>
-    <PageHeading eyebrow="Selasa, 20 Oktober 2026" title="Selamat pagi, Agoy!" description={"Berikut jadwal kuliah dan\u00a0\u00a0presensimu hari ini."} action={<Button onClick={() => navigate("scan")} className="sm:self-center"><Icon name="camera" size={18} />Scan QR Sekarang</Button>} />
+    <PageHeading eyebrow={`Prodi ${deptLabel} • NIM ${profile?.student_number || "2510511009"}`} title={`Selamat pagi, ${firstName}!`} description={"Berikut jadwal kuliah lintas hari dan presensimu."} action={<div className="flex flex-wrap gap-2 sm:self-center"><Button variant="secondary" onClick={() => setShowCatalog((v) => !v)}><Icon name="book" size={18} />{showCatalog ? "Tutup Katalog KRS" : "Ambil Kelas / KRS"}</Button><Button onClick={() => navigate("scan")}><Icon name="camera" size={18} />Scan QR Sekarang</Button></div>} />
+    {showCatalog && (
+      <section className="mb-7 rounded-2xl border border-blue-200 bg-blue-50/70 p-5 shadow-sm md:p-6">
+        <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+          <div>
+            <div className="text-lg font-bold text-slate-900">Katalog Mata Kuliah & Kelas (Multi-Prodi & Multi-Dosen)</div>
+            <p className="text-xs text-slate-600">Pilih kelas dari berbagai prodi dan hari kuliah untuk ditambahkan ke jadwal presensimu.</p>
+          </div>
+          <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">{catalog.length} kelas tersedia</span>
+        </div>
+        {catalog.length === 0 ? (
+          <div className="rounded-xl bg-white p-4 text-sm text-slate-500">Belum ada kelas tambahan dari dosen. Minta akun dosen menambahkan mata kuliah baru.</div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {catalog.map((item) => {
+              const isEnrolled = enrolledIds.has(item.sectionId);
+              return (
+                <div key={item.sectionId} className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-4">
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="rounded-md bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700">{item.code} • {item.sectionName}</span>
+                      <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">{item.department}</span>
+                    </div>
+                    <div className="mt-2 font-bold text-slate-900">{item.name}</div>
+                    <div className="mt-1 text-xs text-slate-500">Dosen: <span className="font-semibold text-slate-700">{item.lecturerName}</span></div>
+                    <div className="mt-1 text-xs text-slate-500">{item.dayOfWeek}, {item.time} • {item.room}</div>
+                  </div>
+                  <Button
+                    variant={isEnrolled ? "secondary" : "primary"}
+                    disabled={enrollingId === item.sectionId}
+                    onClick={() => handleToggleEnroll(item.sectionId, isEnrolled)}
+                    className="mt-4 w-full !py-2 text-xs"
+                  >
+                    {enrollingId === item.sectionId ? "Menyimpan..." : isEnrolled ? "✓ Terdaftar (Klik untuk batal)" : "+ Ambil Kelas Ini"}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    )}
     <div className="grid gap-4 sm:grid-cols-3">
       <StatCard icon="check" label="Kehadiran semester ini" value={`${attendanceCount}/42`} detail="92% tingkat kehadiran" tone="emerald" />
-      <StatCard icon="calendar" label="Jadwal hari ini" value="3 Kelas" detail="Kelas pertama pukul 08.00" tone="blue" />
+      <StatCard icon="calendar" label="Jadwal hari ini" value={`${displayCourses.length} Kelas`} detail={`Kelas pertama pukul ${displayCourses[0]?.time || "08.00"}`} tone="blue" />
       <StatCard icon="clock" label="Total keterlambatan" value="2 Kali" detail="Berusahalah datang lebih tepat waktu" tone="amber" />
     </div>
     <section className="mt-7 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
@@ -394,8 +561,8 @@ function StudentDashboard({ navigate, attendanceCount, leaveRequests }: { naviga
     </section>
     <div className="mt-7 grid gap-7 xl:grid-cols-[1.55fr_0.75fr]">
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
-        <div className="mb-6 flex items-center justify-between"><div><div className="text-lg font-bold">Jadwal hari ini</div><div className="mt-1 text-xs text-slate-400">3 mata kuliah terjadwal</div></div><Button variant="ghost" className="!px-2 text-blue-600">Lihat kalender <Icon name="chevron" size={15} /></Button></div>
-        <div className="space-y-3">{studentCourses.map((course, i) => <ScheduleRow key={course.code} course={course} active={i === 0} onScan={() => navigate("scan")} />)}</div>
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><div className="text-lg font-bold">Jadwal perkuliahan</div><div className="mt-1 text-xs text-slate-400">{displayCourses.length} mata kuliah ditampilkan</div></div><div className="flex flex-wrap gap-1.5">{["Semua", "Senin", "Selasa", "Rabu", "Kamis", "Jumat"].map((d) => <button key={d} type="button" onClick={() => setSelectedDay(d)} className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${selectedDay === d ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>{d}</button>)}</div></div>
+        <div className="space-y-3">{displayCourses.map((course, i) => <ScheduleRow key={course.code} course={course} active={i === 0} onScan={() => navigate("scan")} />)}</div>
       </section>
       <section className="overflow-hidden rounded-2xl bg-blue-600 p-6 text-white shadow-lg shadow-blue-100">
         <div className="flex items-start justify-between"><div className="grid size-12 place-items-center rounded-2xl bg-white/15"><Icon name="qr" size={25} /></div><span className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">Siap dipindai</span></div>
@@ -413,7 +580,15 @@ function StudentDashboard({ navigate, attendanceCount, leaveRequests }: { naviga
   </div>;
 }
 
-function LeaveRequestForm({ navigate, onSubmit }: { navigate: (s: Screen) => void; onSubmit: (data: { courseCode: string; absenceDate: string; reason: LeaveReason; description: string; attachment?: string }) => void }) {
+function LeaveRequestForm({
+  navigate,
+  onSubmit,
+  courses,
+}: {
+  navigate: (s: Screen) => void;
+  onSubmit: (data: { courseCode: string; sectionId?: string; absenceDate: string; reason: LeaveReason; description: string; attachment?: string }) => Promise<void> | void;
+  courses: CourseScheduleItem[];
+}) {
   const [courseCode, setCourseCode] = useState("");
   const [absenceDate, setAbsenceDate] = useState("");
   const [reason, setReason] = useState("");
@@ -421,16 +596,38 @@ function LeaveRequestForm({ navigate, onSubmit }: { navigate: (s: Screen) => voi
   const [attachment, setAttachment] = useState("");
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
-  const submit = (e: FormEvent) => {
+  const [submitting, setSubmitting] = useState(false);
+
+  const courseOptions = courses.length > 0
+    ? courses.map((c) => ({ code: c.code, name: c.name, sectionId: c.sectionId, sectionName: c.sectionName }))
+    : studentCourses.map((c) => ({ code: c.code, name: c.name, sectionId: "", sectionName: "" }));
+
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!courseCode || !absenceDate || !reason) {
       setError("Lengkapi mata kuliah, tanggal ketidakhadiran, dan alasan sebelum mengirim pengajuan.");
       setSent(false);
       return;
     }
-    onSubmit({ courseCode, absenceDate, reason: reason as LeaveReason, description, attachment: attachment || undefined });
-    setError("");
-    setSent(true);
+    const chosen = courseOptions.find((c) => c.code === courseCode);
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        courseCode,
+        sectionId: chosen?.sectionId,
+        absenceDate,
+        reason: reason as LeaveReason,
+        description,
+        attachment: attachment || undefined,
+      });
+      setError("");
+      setSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal mengirim pengajuan izin.");
+      setSent(false);
+    } finally {
+      setSubmitting(false);
+    }
   };
   return <div>
     <Button variant="ghost" onClick={() => navigate("student-dashboard")} className="mb-5 !px-0"><Icon name="arrow" size={18} />Kembali ke beranda</Button>
@@ -440,10 +637,10 @@ function LeaveRequestForm({ navigate, onSubmit }: { navigate: (s: Screen) => voi
         <div className="mb-6 flex items-center gap-3 border-b border-slate-100 pb-5"><div className="grid size-10 place-items-center rounded-xl bg-blue-50 text-blue-600"><Icon name="calendar" size={20} /></div><div><div className="font-bold">Detail pengajuan</div><div className="text-xs text-slate-400">Kolom bertanda wajib harus dilengkapi</div></div></div>
         <div className="space-y-5">
           {error && <Feedback tone="error">{error}</Feedback>}
-          {sent && <Feedback tone="success">Pengajuan berhasil dikirim dengan status <strong>Menunggu Persetujuan</strong>. Data hanya tersimpan selama sesi prototype ini.</Feedback>}
+          {sent && <Feedback tone="success">Pengajuan berhasil dikirim ke Supabase dengan status <strong>Menunggu Persetujuan</strong> dan langsung diteruskan ke dosen pengampu.</Feedback>}
           <SelectField label="Mata kuliah *" value={courseCode} onChange={(value) => { setCourseCode(value); setSent(false); }}>
             <option value="">Pilih mata kuliah</option>
-            {studentCourses.map((course) => <option key={course.code} value={course.code}>{course.code} — {course.name}</option>)}
+            {courseOptions.map((course) => <option key={course.code} value={course.code}>{course.code} — {course.name}{course.sectionName ? ` (${course.sectionName})` : ""}</option>)}
           </SelectField>
           <Field label="Tanggal ketidakhadiran *" type="date" value={absenceDate} onChange={(value) => { setAbsenceDate(value); setSent(false); }} />
           <SelectField label="Alasan *" value={reason} onChange={(value) => { setReason(value); setSent(false); }}>
@@ -475,7 +672,7 @@ function LeaveRequestForm({ navigate, onSubmit }: { navigate: (s: Screen) => voi
   </div>;
 }
 
-function LeaveHistory({ requests, navigate, onSelect }: { requests: LeaveRequest[]; navigate: (s: Screen) => void; onSelect: (id: number) => void }) {
+function LeaveHistory({ requests, navigate, onSelect }: { requests: LeaveRequest[]; navigate: (s: Screen) => void; onSelect: (id: string | number) => void }) {
   const studentRequests = requests.filter((request) => request.studentId === "2510511009");
   return <div>
     <Button variant="ghost" onClick={() => navigate("student-dashboard")} className="mb-5 !px-0"><Icon name="arrow" size={18} />Kembali ke beranda</Button>
@@ -545,44 +742,341 @@ function Legend({ color, label, value }: { color: string; label: string; value: 
   return <div><div className="flex items-center gap-2 text-xs text-slate-500"><span className={`size-2 rounded-full ${color}`} />{label}</div><div className="ml-4 mt-0.5 font-bold">{value}</div></div>;
 }
 
-function FakeQR({ small = false }: { small?: boolean }) {
-  const cells = [0, 1, 2, 3, 4, 6, 8, 9, 10, 11, 12, 16, 20, 22, 23, 24, 25, 26, 28, 30, 32, 34, 36, 38, 40, 41, 42, 43, 44, 46, 48, 49, 50, 52, 54, 56, 58, 60, 62, 64, 65, 66, 67, 68, 70, 72, 74, 76, 77, 78, 80, 82, 84, 86, 88, 90, 92, 94, 96, 98, 100, 101, 102, 103, 104, 106, 108, 110, 112, 114, 116, 118, 120];
-  return <div className={`grid grid-cols-11 gap-[2px] rounded-xl bg-white p-3 shadow-sm ${small ? "size-36" : "size-52"}`}>{Array.from({ length: 121 }, (_, i) => <span key={i} className={`rounded-[1px] ${cells.includes(i) || ((i * 7 + 3) % 13 < 4) ? "bg-slate-900" : "bg-white"}`} />)}</div>;
+function SessionQR({ value, small = false }: { value: string; small?: boolean }) {
+  const [svgMarkup, setSvgMarkup] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    QRCode.toString(value || "SMARTATTEND-DEMO", {
+      type: "svg",
+      margin: 1,
+      errorCorrectionLevel: "M",
+      color: { dark: "#0f172a", light: "#ffffff" },
+    })
+      .then((svg) => {
+        if (active) setSvgMarkup(svg);
+      })
+      .catch(() => {
+        if (active) setSvgMarkup("");
+      });
+    return () => {
+      active = false;
+    };
+  }, [value]);
+
+  return (
+    <div
+      className={`overflow-hidden rounded-xl border border-slate-100 bg-white p-2.5 shadow-sm [&>svg]:h-full [&>svg]:w-full ${small ? "size-36" : "size-52"}`}
+      dangerouslySetInnerHTML={{ __html: svgMarkup }}
+    />
+  );
 }
 
-function Scanner({ navigate, scanned, onSuccess }: { navigate: (s: Screen) => void; scanned: boolean; onSuccess: () => void }) {
+function Scanner({
+  navigate,
+  scanned,
+  onSuccess,
+  activeSession,
+  profile,
+}: {
+  navigate: (s: Screen) => void;
+  scanned: boolean;
+  onSuccess: (session?: ActiveSessionInfo | null, timeLabel?: string) => void;
+  activeSession: ActiveSessionInfo | null;
+  profile: UserProfile | null;
+}) {
   const [state, setState] = useState<"ready" | "success" | "expired" | "invalid" | "duplicate">("ready");
-  const scan = (result: "success" | "expired" | "invalid" | "duplicate") => {
-    if (result === "success" && scanned) setState("duplicate");
-    else { setState(result); if (result === "success") onSuccess(); }
+  const [timeLabel, setTimeLabel] = useState("07.56");
+  const [submitting, setSubmitting] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState("");
+  const [manualToken, setManualToken] = useState("");
+  const qrScannerRef = useRef<Html5Qrcode | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const scanLockRef = useRef(false);
+
+  const stopCamera = async () => {
+    const inst = qrScannerRef.current;
+    qrScannerRef.current = null;
+    setCameraActive(false);
+    if (inst) {
+      try {
+        if (inst.isScanning) {
+          await inst.stop();
+        }
+        inst.clear();
+      } catch {
+        // abaikan error saat menutup kamera
+      }
+    }
   };
+
+  useEffect(() => {
+    return () => {
+      stopCamera();
+    };
+  }, []);
+
+  const verifyScannedToken = async (rawToken: string) => {
+    const clean = rawToken.trim().toUpperCase();
+    if (!clean) {
+      setState("invalid");
+      return;
+    }
+
+    if (profile) {
+      setSubmitting(true);
+      try {
+        const { data: matchedSession } = await supabase
+          .from("attendance_sessions")
+          .select(`
+            id,
+            section_id,
+            title,
+            qr_token_hash,
+            status,
+            class_sections (
+              section_name,
+              courses (
+                course_code,
+                course_name
+              )
+            )
+          `)
+          .eq("qr_token_hash", clean)
+          .eq("status", "open")
+          .maybeSingle();
+
+        if (!matchedSession) {
+          setState("invalid");
+          return;
+        }
+
+        const sec = Array.isArray(matchedSession.class_sections)
+          ? matchedSession.class_sections[0]
+          : matchedSession.class_sections;
+        const crs = sec?.courses
+          ? Array.isArray(sec.courses)
+            ? sec.courses[0]
+            : sec.courses
+          : null;
+
+        const targetSession: ActiveSessionInfo = {
+          id: matchedSession.id,
+          sectionId: matchedSession.section_id,
+          courseCode: crs?.course_code || activeSession?.courseCode || "IF2140",
+          courseName: crs?.course_name || activeSession?.courseName || "Mata Kuliah",
+          sectionName: sec?.section_name || activeSession?.sectionName || "Kelas A",
+          title: matchedSession.title,
+          qrTokenHash: matchedSession.qr_token_hash,
+        };
+
+        const res = await submitStudentCheckIn({ sessionId: targetSession.id, studentId: profile.id });
+        setTimeLabel(res.timeLabel);
+        if (res.status === "duplicate") {
+          setState("duplicate");
+        } else {
+          setState("success");
+          onSuccess(targetSession, res.timeLabel);
+        }
+      } catch {
+        setState("invalid");
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    if (clean.startsWith("SA-")) {
+      if (scanned) setState("duplicate");
+      else {
+        setState("success");
+        onSuccess(null, timeLabel);
+      }
+    } else {
+      setState("invalid");
+    }
+  };
+
+  const startCamera = async () => {
+    setCameraError("");
+    scanLockRef.current = false;
+    try {
+      await stopCamera();
+      const html5Qr = new Html5Qrcode("smartattend-qr-reader");
+      qrScannerRef.current = html5Qr;
+      setCameraActive(true);
+      await html5Qr.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 220, height: 220 } },
+        async (decodedText) => {
+          if (scanLockRef.current) return;
+          scanLockRef.current = true;
+          await stopCamera();
+          await verifyScannedToken(decodedText);
+        },
+        () => {}
+      );
+    } catch (err) {
+      setCameraActive(false);
+      setCameraError(
+        err instanceof Error
+          ? `Kamera tidak dapat diakses (${err.message}). Gunakan unggah gambar QR atau input token di samping.`
+          : "Kamera tidak ditemukan atau izin ditolak."
+      );
+    }
+  };
+
+  const handleQrImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setCameraError("");
+    try {
+      await stopCamera();
+      const html5Qr = new Html5Qrcode("smartattend-qr-file-reader");
+      const decodedText = await html5Qr.scanFile(file, true);
+      html5Qr.clear();
+      await verifyScannedToken(decodedText);
+    } catch {
+      setState("invalid");
+    }
+  };
+
+  const scan = async (result: "success" | "expired" | "invalid" | "duplicate") => {
+    if (result !== "success") {
+      setState(result);
+      return;
+    }
+
+    if (activeSession && profile) {
+      setSubmitting(true);
+      try {
+        const res = await submitStudentCheckIn({ sessionId: activeSession.id, studentId: profile.id });
+        setTimeLabel(res.timeLabel);
+        if (res.status === "duplicate") {
+          setState("duplicate");
+        } else {
+          setState("success");
+          onSuccess(activeSession, res.timeLabel);
+        }
+      } catch {
+        setState("invalid");
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    if (scanned) setState("duplicate");
+    else {
+      setState("success");
+      onSuccess(null, timeLabel);
+    }
+  };
+
+  const sessionCourseName = activeSession?.courseName || "Pemrograman Berorientasi Objek";
   const messages = {
-    success: { icon: "check" as IconName, title: "Presensi berhasil!", text: "Kehadiranmu untuk Pemrograman Berorientasi Objek telah tercatat pukul 07.56.", color: "emerald" },
+    success: { icon: "check" as IconName, title: "Presensi berhasil!", text: `Kehadiranmu untuk ${sessionCourseName} telah tercatat pukul ${timeLabel}.`, color: "emerald" },
     expired: { icon: "clock" as IconName, title: "Kode QR kedaluwarsa", text: "Sesi ini telah berakhir pukul 09.40. Minta dosen membuat sesi baru.", color: "amber" },
     invalid: { icon: "x" as IconName, title: "Sesi tidak valid", text: "Kode QR ini tidak dikenali atau bukan untuk jadwal kuliahmu.", color: "red" },
-    duplicate: { icon: "info" as IconName, title: "Presensi sudah tercatat", text: "Kamu sudah melakukan presensi untuk sesi ini pukul 07.56.", color: "blue" },
+    duplicate: { icon: "info" as IconName, title: "Presensi sudah tercatat", text: `Kamu sudah melakukan presensi untuk sesi ini pukul ${timeLabel}.`, color: "blue" },
   };
   return <div>
-    <Button variant="ghost" onClick={() => navigate("student-dashboard")} className="mb-5 !px-0"><Icon name="arrow" size={18} />Kembali ke beranda</Button>
-    <PageHeading title="Pindai kode QR" description="Arahkan kamera ke kode QR yang ditampilkan oleh dosen." />
+    <Button variant="ghost" onClick={() => { stopCamera(); navigate("student-dashboard"); }} className="mb-5 !px-0"><Icon name="arrow" size={18} />Kembali ke beranda</Button>
+    <PageHeading title="Pindai kode QR" description="Arahkan kamera ke kode QR yang ditampilkan oleh dosen atau unggah gambar QR." />
+    <div id="smartattend-qr-file-reader" className="hidden" />
+    <input ref={fileInputRef} type="file" accept="image/*" onChange={handleQrImageUpload} className="hidden" />
     <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
       <section className="rounded-2xl bg-slate-900 p-4 shadow-xl md:p-8">
         <div className="relative mx-auto aspect-[4/3] max-h-[32rem] overflow-hidden rounded-xl bg-gradient-to-br from-slate-800 to-slate-950">
-          <div className="absolute inset-0 opacity-20 [background-image:radial-gradient(circle_at_center,#94a3b8_1px,transparent_1px)] [background-size:18px_18px]" />
-          <div className="absolute left-1/2 top-1/2 size-56 -translate-x-1/2 -translate-y-1/2 md:size-64">
-            <span className="absolute left-0 top-0 size-12 rounded-tl-xl border-l-4 border-t-4 border-blue-400" /><span className="absolute right-0 top-0 size-12 rounded-tr-xl border-r-4 border-t-4 border-blue-400" /><span className="absolute bottom-0 left-0 size-12 rounded-bl-xl border-b-4 border-l-4 border-blue-400" /><span className="absolute bottom-0 right-0 size-12 rounded-br-xl border-b-4 border-r-4 border-blue-400" />
-            <span className="scan-line absolute inset-x-4 top-1/2 h-0.5 bg-blue-400 shadow-[0_0_12px_#60a5fa]" />
+          <div id="smartattend-qr-reader" className={`h-full w-full [&_video]:h-full [&_video]:w-full [&_video]:object-cover ${cameraActive ? "block" : "hidden"}`} />
+          {!cameraActive && (
+            <>
+              <div className="absolute inset-0 opacity-20 [background-image:radial-gradient(circle_at_center,#94a3b8_1px,transparent_1px)] [background-size:18px_18px]" />
+              <div className="absolute left-1/2 top-1/2 size-56 -translate-x-1/2 -translate-y-1/2 md:size-64">
+                <span className="absolute left-0 top-0 size-12 rounded-tl-xl border-l-4 border-t-4 border-blue-400" /><span className="absolute right-0 top-0 size-12 rounded-tr-xl border-r-4 border-t-4 border-blue-400" /><span className="absolute bottom-0 left-0 size-12 rounded-bl-xl border-b-4 border-l-4 border-blue-400" /><span className="absolute bottom-0 right-0 size-12 rounded-br-xl border-b-4 border-r-4 border-blue-400" />
+                <span className="scan-line absolute inset-x-4 top-1/2 h-0.5 bg-blue-400 shadow-[0_0_12px_#60a5fa]" />
+              </div>
+            </>
+          )}
+          <div className="absolute inset-x-0 bottom-5 z-10 flex flex-col items-center gap-3 px-4 text-center">
+            <div className="text-sm font-medium text-slate-200 drop-shadow">
+              {cameraActive ? "Kamera aktif — arahkan ke QR Code dosen" : "Posisikan kode QR di dalam bingkai"}
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {!cameraActive ? (
+                <button
+                  type="button"
+                  onClick={startCamera}
+                  className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-lg transition hover:bg-blue-500"
+                >
+                  <Icon name="camera" size={16} /> Aktifkan Kamera
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={stopCamera}
+                  className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white shadow-lg transition hover:bg-red-500"
+                >
+                  <Icon name="x" size={16} /> Matikan Kamera
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-800/90 px-4 py-2 text-xs font-semibold text-slate-100 shadow transition hover:bg-slate-700"
+              >
+                <Icon name="qr" size={16} /> Unggah Gambar QR
+              </button>
+            </div>
           </div>
-          <div className="absolute inset-x-0 bottom-6 text-center text-sm font-medium text-slate-300">Posisikan kode QR di dalam bingkai</div>
         </div>
+        {cameraError && (
+          <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200">
+            {cameraError}
+          </div>
+        )}
       </section>
       <aside className="space-y-4">
-        {state !== "ready" && <ScanResult data={messages[state]} onAgain={() => setState("ready")} onHome={() => navigate("student-dashboard")} />}
+        {activeSession && (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900">
+            <div className="flex items-center gap-2 font-bold text-emerald-800">
+              <span className="size-2 animate-pulse rounded-full bg-emerald-500" />
+              Sesi aktif terdeteksi: {activeSession.courseCode}
+            </div>
+            <div className="mt-1 font-semibold">{activeSession.courseName} ({activeSession.sectionName})</div>
+            <div className="mt-0.5 text-emerald-700">{activeSession.title} • Token: {activeSession.qrTokenHash}</div>
+          </div>
+        )}
+        {state !== "ready" && <ScanResult data={messages[state]} onAgain={() => { setState("ready"); scanLockRef.current = false; }} onHome={() => navigate("student-dashboard")} />}
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="font-bold">Verifikasi token manual</div>
+          <p className="mt-1 text-xs leading-5 text-slate-500">Masukkan kode token sesi (contoh: SA-UV99KU) jika kamera tidak digunakan.</p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              verifyScannedToken(manualToken);
+            }}
+            className="mt-3 flex gap-2"
+          >
+            <input
+              type="text"
+              value={manualToken}
+              onChange={(e) => setManualToken(e.target.value)}
+              placeholder="SA-XXXXXX"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 font-mono text-xs uppercase outline-none focus:border-blue-500"
+            />
+            <Button type="submit" disabled={submitting} className="!px-3.5 !py-2 text-xs">
+              Cek
+            </Button>
+          </form>
+        </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="font-bold">Simulasi hasil scan</div>
-          <p className="mt-1 text-xs leading-5 text-slate-500">Pilih skenario untuk melihat respons validasi sistem.</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">{activeSession ? "Klik Berhasil untuk mencatat kehadiranmu ke database Supabase." : "Pilih skenario untuk melihat respons validasi sistem."}</p>
           <div className="mt-4 grid grid-cols-2 gap-2">
-            <Button variant="secondary" onClick={() => scan("success")} className="!justify-start !px-3 text-xs"><span className="size-2 rounded-full bg-emerald-500" />Berhasil</Button>
+            <Button variant="secondary" disabled={submitting} onClick={() => scan("success")} className="!justify-start !px-3 text-xs"><span className="size-2 rounded-full bg-emerald-500" />{submitting ? "Menyimpan..." : "Berhasil"}</Button>
             <Button variant="secondary" onClick={() => scan("expired")} className="!justify-start !px-3 text-xs"><span className="size-2 rounded-full bg-amber-500" />Kedaluwarsa</Button>
             <Button variant="secondary" onClick={() => scan("invalid")} className="!justify-start !px-3 text-xs"><span className="size-2 rounded-full bg-red-500" />Tidak valid</Button>
             <Button variant="secondary" onClick={() => scan("duplicate")} className="!justify-start !px-3 text-xs"><span className="size-2 rounded-full bg-blue-500" />Duplikat</Button>
@@ -615,14 +1109,34 @@ function AttendanceHistory({ history }: { history: typeof initialHistory }) {
   </div>;
 }
 
-function LecturerDashboard({ navigate, leaveRequests }: { navigate: (s: Screen) => void; leaveRequests: LeaveRequest[] }) {
+function LecturerDashboard({ navigate, leaveRequests, sections, profile }: { navigate: (s: Screen) => void; leaveRequests: LeaveRequest[]; sections: CourseScheduleItem[]; profile: UserProfile | null; onRefreshSections?: () => Promise<void> }) {
+  const [selectedDay, setSelectedDay] = useState<string>("Semua");
+  const rawClasses = sections.length > 0
+    ? sections.map((item) => ({
+        code: item.code,
+        name: item.name,
+        group: item.sectionName,
+        dayOfWeek: item.dayOfWeek || "Senin",
+        students: item.students,
+        attended: item.attended,
+        time: item.time,
+        room: item.room,
+        color: item.color,
+      }))
+    : lecturerClasses.map((c) => ({ ...c, dayOfWeek: "Senin" }));
+  const displayClasses = selectedDay === "Semua"
+    ? rawClasses
+    : rawClasses.filter((item) => item.dayOfWeek === selectedDay);
+  const totalStudents = rawClasses.reduce((sum, item) => sum + item.students, 0);
+  const lecturerName = profile?.full_name || "Dr. Desta Sandya Prasvita, M.Kom";
+  const deptLabel = profile?.department || "S1 Informatika - FIK UPNVJ";
   const pending = leaveRequests.filter((request) => request.status === "Menunggu Persetujuan").length;
   return <div>
-    <PageHeading eyebrow="Senin, 20 Mei 2024" title="Selamat pagi, Pak Andra!" description="Kelola kelas, sesi presensi, dan pantau kehadiran mahasiswa." action={<Button onClick={() => navigate("create-session")}><Icon name="plus" size={18} />Buat Sesi Presensi</Button>} />
+    <PageHeading eyebrow={deptLabel} title={`Selamat datang, ${lecturerName}`} description="Daftar mata kuliah dan kelas yang ditetapkan kampus untuk Anda ampu." action={<Button onClick={() => navigate("create-session")}><Icon name="plus" size={18} />Buat Sesi Presensi</Button>} />
     <div className="grid gap-4 sm:grid-cols-3">
-      <StatCard icon="book" label="Kelas hari ini" value="3 Kelas" detail="116 mahasiswa terdaftar" tone="blue" />
-      <StatCard icon="users" label="Hadir hari ini" value="104" detail="89,6% tingkat kehadiran" tone="emerald" />
-      <StatCard icon="live" label="Sesi aktif" value="1 Sesi" detail="IF2140 • berakhir 09.40" tone="amber" />
+      <StatCard icon="book" label="Mata kuliah diampu" value={`${rawClasses.length} Kelas`} detail={`${totalStudents} mahasiswa terdaftar`} tone="blue" />
+      <StatCard icon="users" label="Jadwal mengajar" value={`${new Set(rawClasses.map((c) => c.dayOfWeek)).size} Hari`} detail={Array.from(new Set(rawClasses.map((c) => c.dayOfWeek))).join(", ") || "Senin"} tone="emerald" />
+      <StatCard icon="live" label="Sesi aktif" value="Siap Dibuka" detail={`${rawClasses[0]?.code || "IF3101"} • ${rawClasses[0]?.name || "Metode Penelitian"}`} tone="amber" />
     </div>
     <section className="mt-7 rounded-2xl border border-blue-100 bg-blue-50 p-5 md:p-6">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
@@ -631,21 +1145,34 @@ function LecturerDashboard({ navigate, leaveRequests }: { navigate: (s: Screen) 
       </div>
     </section>
     <section className="mt-7 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
-      <div className="mb-6 flex items-center justify-between"><div><div className="text-lg font-bold">Kelas hari ini</div><div className="mt-1 text-xs text-slate-400">Senin, 20 Mei 2024</div></div><Button variant="ghost" className="!px-2 text-blue-600">Lihat semua kelas <Icon name="chevron" size={15} /></Button></div>
-      <div className="grid gap-4 lg:grid-cols-3">{lecturerClasses.map((c, i) => <ClassCard key={c.code} course={c} active={i === 0} onLive={() => navigate("live")} onCreate={() => navigate("create-session")} />)}</div>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-lg font-bold">Jadwal mengampu Anda</div>
+          <div className="mt-1 text-xs text-slate-400">Plotting resmi SIAKAD • Pilih kelas untuk membuka sesi presensi QR</div>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {["Semua", "Senin", "Selasa", "Rabu", "Kamis", "Jumat"].map((d) => (
+            <button key={d} type="button" onClick={() => setSelectedDay(d)} className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${selectedDay === d ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>{d}</button>
+          ))}
+        </div>
+      </div>
+      {displayClasses.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">Tidak ada jadwal mengampu pada hari {selectedDay}.</div>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-3">{displayClasses.map((c, i) => <ClassCard key={`${c.code}-${i}`} course={c} active={i === 0} onLive={() => navigate("live")} onCreate={() => navigate("create-session")} />)}</div>
+      )}
     </section>
     <section className="mt-7 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
         <div><div className="text-lg font-bold">Ringkasan kehadiran semester</div><p className="mt-1 text-sm text-slate-500">Rata-rata seluruh kelas yang Anda ampu</p></div>
         <div className="flex flex-1 flex-col gap-4 sm:flex-row lg:max-w-2xl">
-          {[["Pemrograman Berorientasi Objek", "94%", 94], ["Basis Data", "91%", 91], ["Interaksi Manusia Komputer", "86%", 86]].map(([name, val, num]) => <div key={name as string} className="flex-1"><div className="mb-2 flex justify-between text-xs"><span className="font-medium text-slate-600">{name}</span><span className="font-bold text-slate-800">{val}</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-600" style={{ width: `${num}%` }} /></div></div>)}
+          {rawClasses.slice(0, 3).map((cls) => <div key={cls.code} className="flex-1"><div className="mb-2 flex justify-between text-xs"><span className="font-medium text-slate-600">{cls.name}</span><span className="font-bold text-slate-800">94%</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-600" style={{ width: "94%" }} /></div></div>)}
         </div>
       </div>
     </section>
   </div>;
 }
-
-function LecturerLeaveRequests({ requests, navigate, onSelect }: { requests: LeaveRequest[]; navigate: (s: Screen) => void; onSelect: (id: number) => void }) {
+function LecturerLeaveRequests({ requests, navigate, onSelect }: { requests: LeaveRequest[]; navigate: (s: Screen) => void; onSelect: (id: string | number) => void }) {
   return <div>
     <Button variant="ghost" onClick={() => navigate("lecturer-dashboard")} className="mb-5 !px-0"><Icon name="arrow" size={18} />Kembali ke beranda</Button>
     <PageHeading title="Permohonan izin mahasiswa" description="Periksa pengajuan dari kelas yang Anda ampu dan simpan keputusan." />
@@ -667,7 +1194,7 @@ function LecturerLeaveRequests({ requests, navigate, onSelect }: { requests: Lea
   </div>;
 }
 
-function LecturerLeaveDetail({ request, navigate, onDecision }: { request?: LeaveRequest; navigate: (s: Screen) => void; onDecision: (id: number, status: "Disetujui" | "Ditolak", note: string) => void }) {
+function LecturerLeaveDetail({ request, navigate, onDecision }: { request?: LeaveRequest; navigate: (s: Screen) => void; onDecision: (id: string | number, status: "Disetujui" | "Ditolak", note: string) => void }) {
   const [note, setNote] = useState(request?.lecturerNote || "");
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
@@ -720,13 +1247,57 @@ function ClassCard({ course, active, onLive, onCreate }: { course: typeof lectur
   </div>;
 }
 
-function CreateSession({ navigate, onCreate }: { navigate: (s: Screen) => void; onCreate: () => void }) {
-  const [course, setCourse] = useState("IF2140");
+function CreateSession({
+  navigate,
+  onCreate,
+  sections,
+}: {
+  navigate: (s: Screen) => void;
+  onCreate: (session: ActiveSessionInfo) => void;
+  sections: CourseScheduleItem[];
+}) {
+  const [selectedSectionId, setSelectedSectionId] = useState(sections[0]?.sectionId || "");
   const [meeting, setMeeting] = useState("12");
   const [start, setStart] = useState("08:00");
   const [end, setEnd] = useState("09:40");
   const [generated, setGenerated] = useState(false);
-  const generate = (e: FormEvent) => { e.preventDefault(); setGenerated(true); onCreate(); };
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [createdSession, setCreatedSession] = useState<ActiveSessionInfo | null>(null);
+
+  useEffect(() => {
+    if (!selectedSectionId && sections.length > 0) {
+      setSelectedSectionId(sections[0].sectionId);
+    }
+  }, [sections, selectedSectionId]);
+
+  const currentSection = sections.find((s) => s.sectionId === selectedSectionId) || sections[0];
+
+  const generate = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (!currentSection) {
+      setError("Belum ada kelas yang tersedia untuk dosen ini.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const session = await createAttendanceSession({
+        sectionId: currentSection.sectionId,
+        meetingNumber: meeting,
+        startTime: start,
+        endTime: end,
+      });
+      setCreatedSession(session);
+      setGenerated(true);
+      onCreate(session);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal membuat sesi presensi.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return <div>
     <Button variant="ghost" onClick={() => navigate("lecturer-dashboard")} className="mb-5 !px-0"><Icon name="arrow" size={18} />Kembali ke beranda</Button>
     <PageHeading title="Buat sesi presensi" description="Atur detail pertemuan dan buat kode QR untuk mahasiswa." />
@@ -734,37 +1305,97 @@ function CreateSession({ navigate, onCreate }: { navigate: (s: Screen) => void; 
       <form onSubmit={generate} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
         <div className="mb-6 flex items-center gap-3 border-b border-slate-100 pb-5"><div className="grid size-10 place-items-center rounded-xl bg-blue-50 text-blue-600"><Icon name="calendar" size={20} /></div><div><div className="font-bold">Detail sesi</div><div className="text-xs text-slate-400">Pastikan informasi kelas sudah sesuai</div></div></div>
         <div className="space-y-5">
-          <SelectField label="Mata kuliah" value={course} onChange={setCourse}><option value="IF2140">IF2140 — Pemrograman Berorientasi Objek</option><option value="IF2150">IF2150 — Basis Data</option><option value="IF2160">IF2160 — Interaksi Manusia Komputer</option></SelectField>
-          <div className="grid gap-5 sm:grid-cols-2"><Field label="Pertemuan ke-" value={meeting} onChange={setMeeting} /><SelectField label="Kelas" value="A" onChange={() => { }}><option>A — Reguler</option><option>B — Reguler</option></SelectField></div>
+          {error && <Feedback tone="error">{error}</Feedback>}
+          <SelectField label="Mata kuliah & Kelas" value={currentSection?.sectionId || ""} onChange={setSelectedSectionId}>
+            {sections.length > 0 ? (
+              sections.map((sec) => (
+                <option key={sec.sectionId} value={sec.sectionId}>
+                  {sec.code} — {sec.name} ({sec.sectionName})
+                </option>
+              ))
+            ) : (
+              <option value="">Memuat daftar kelas...</option>
+            )}
+          </SelectField>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <Field label="Pertemuan ke-" value={meeting} onChange={setMeeting} />
+            <Field label="Kelas" value={currentSection?.sectionName || "Kelas A"} onChange={() => {}} />
+          </div>
           <div className="grid gap-5 sm:grid-cols-2"><Field label="Waktu mulai" type="time" value={start} onChange={setStart} /><Field label="Waktu selesai" type="time" value={end} onChange={setEnd} /></div>
           <div className="rounded-xl bg-slate-50 p-4"><label className="flex items-start gap-3"><input type="checkbox" defaultChecked className="mt-0.5 size-4 accent-blue-600" /><span><span className="block text-sm font-semibold text-slate-700">Validasi waktu otomatis</span><span className="mt-1 block text-xs leading-5 text-slate-500">QR akan kedaluwarsa setelah waktu selesai dan presensi ganda akan ditolak.</span></span></label></div>
-          <Button type="submit" className="w-full !py-3.5"><Icon name="qr" size={19} />Buat & Tampilkan QR</Button>
+          <Button type="submit" disabled={loading} className="w-full !py-3.5"><Icon name="qr" size={19} />{loading ? "Membuat sesi..." : "Buat & Tampilkan QR"}</Button>
         </div>
       </form>
       <aside className={`rounded-2xl p-6 text-center transition-all ${generated ? "border border-blue-200 bg-blue-50" : "border border-dashed border-slate-300 bg-white"}`}>
-        {generated ? <><div className="mx-auto flex w-fit items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700"><span className="size-2 animate-pulse rounded-full bg-emerald-500" />Sesi aktif</div><div className="mx-auto mt-5 w-fit"><FakeQR small /></div><div className="mt-5 font-bold">Pemrograman Berorientasi Objek</div><div className="mt-1 text-xs text-slate-500">Pertemuan {meeting} • Kelas A</div><div className="mt-4 flex items-center justify-center gap-2 text-sm font-semibold text-blue-700"><Icon name="clock" size={17} />{start} – {end} WIB</div><Button onClick={() => navigate("live")} className="mt-6 w-full">Pantau Presensi Live <Icon name="chevron" size={17} /></Button></> : <div className="flex min-h-80 flex-col items-center justify-center"><div className="grid size-16 place-items-center rounded-2xl bg-slate-100 text-slate-400"><Icon name="qr" size={30} /></div><div className="mt-5 font-bold text-slate-700">QR belum dibuat</div><p className="mt-2 max-w-xs text-xs leading-5 text-slate-400">Lengkapi detail sesi, lalu tekan tombol buat untuk menghasilkan kode QR demo.</p></div>}
+        {generated && createdSession ? <><div className="mx-auto flex w-fit items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700"><span className="size-2 animate-pulse rounded-full bg-emerald-500" />Sesi aktif</div><div className="mx-auto mt-5 w-fit"><SessionQR value={createdSession.qrTokenHash} small /></div><div className="mt-3 inline-block rounded-lg bg-white px-3 py-1 font-mono text-xs font-bold text-blue-700 shadow-sm">Token: {createdSession.qrTokenHash}</div><div className="mt-4 font-bold">{createdSession.courseName}</div><div className="mt-1 text-xs text-slate-500">{createdSession.title} • {createdSession.sectionName}</div><div className="mt-4 flex items-center justify-center gap-2 text-sm font-semibold text-blue-700"><Icon name="clock" size={17} />{start} – {end} WIB</div><Button onClick={() => navigate("live")} className="mt-6 w-full">Pantau Presensi Live <Icon name="chevron" size={17} /></Button></> : <div className="flex min-h-80 flex-col items-center justify-center"><div className="grid size-16 place-items-center rounded-2xl bg-slate-100 text-slate-400"><Icon name="qr" size={30} /></div><div className="mt-5 font-bold text-slate-700">QR belum dibuat</div><p className="mt-2 max-w-xs text-xs leading-5 text-slate-400">Lengkapi detail sesi, lalu tekan tombol buat untuk menghasilkan kode QR.</p></div>}
       </aside>
     </div>
   </div>;
 }
 
-function LiveAttendance({ navigate, sessionCreated, leaveRequests }: { navigate: (s: Screen) => void; sessionCreated: boolean; leaveRequests: LeaveRequest[] }) {
+function LiveAttendance({
+  navigate,
+  sessionCreated,
+  leaveRequests,
+  activeSession,
+  onCloseSession,
+}: {
+  navigate: (s: Screen) => void;
+  sessionCreated: boolean;
+  leaveRequests: LeaveRequest[];
+  activeSession: ActiveSessionInfo | null;
+  onCloseSession: () => void;
+}) {
   const [tab, setTab] = useState<"live" | "recap">("live");
   const [query, setQuery] = useState("");
-  const attendees = useMemo(() => attendeeSeed.filter((x) => x.name.toLowerCase().includes(query.toLowerCase()) || x.id.includes(query)), [query]);
+  const [dbAttendees, setDbAttendees] = useState<LiveAttendeeItem[]>([]);
+
+  useEffect(() => {
+    if (!activeSession) {
+      setDbAttendees([]);
+      return;
+    }
+    fetchSessionAttendees(activeSession.id).then(setDbAttendees);
+  }, [activeSession]);
+
+  const sourceList = activeSession
+    ? dbAttendees.map((a) => ({
+        id: a.studentNumber,
+        name: a.name,
+        initials: a.initials,
+        time: a.time,
+        status: a.status,
+        tone: a.tone,
+      }))
+    : attendeeSeed;
+
+  const attendees = useMemo(
+    () => sourceList.filter((x) => x.name.toLowerCase().includes(query.toLowerCase()) || x.id.includes(query)),
+    [query, sourceList]
+  );
+
+  const sessionTitle = activeSession ? `Presensi ${activeSession.courseName}` : "Presensi Pemrograman Berorientasi Objek";
+  const sessionDesc = activeSession
+    ? `${activeSession.courseCode} • ${activeSession.title} • ${activeSession.sectionName}`
+    : "IF2140 • Pertemuan 12 • Senin, 20 Mei 2024";
+
   return <div>
     <Button variant="ghost" onClick={() => navigate("lecturer-dashboard")} className="mb-5 !px-0"><Icon name="arrow" size={18} />Kembali ke beranda</Button>
-    <PageHeading title="Presensi Pemrograman Berorientasi Objek" description="IF2140 • Pertemuan 12 • Senin, 20 Mei 2024" action={<div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700"><span className="size-2 animate-pulse rounded-full bg-emerald-500" />{sessionCreated ? "Sesi aktif" : "Sesi demo aktif"} • 32:18</div>} />
+    <PageHeading title={sessionTitle} description={sessionDesc} action={<div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700"><span className="size-2 animate-pulse rounded-full bg-emerald-500" />{activeSession || sessionCreated ? "Sesi aktif" : "Sesi demo aktif"}</div>} />
     <div className="mb-6 flex w-fit rounded-xl bg-slate-100 p-1"><Button variant="ghost" onClick={() => setTab("live")} className={tab === "live" ? "!bg-white !text-blue-700 shadow-sm" : ""}><Icon name="live" size={17} />Daftar Live</Button><Button variant="ghost" onClick={() => setTab("recap")} className={tab === "recap" ? "!bg-white !text-blue-700 shadow-sm" : ""}><Icon name="history" size={17} />Rekap Presensi</Button></div>
     {tab === "live" ? <div className="grid gap-6 xl:grid-cols-[1fr_19rem]">
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between"><div><div className="font-bold">Mahasiswa hadir</div><div className="mt-1 text-xs text-slate-400">Diperbarui secara otomatis dalam simulasi</div></div><div className="relative"><Icon name="search" size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={query} onChange={(e) => setQuery(e.target.value)} className="w-full rounded-xl border border-slate-200 py-2.5 pl-10 pr-4 text-sm outline-none focus:border-blue-500 sm:w-64" placeholder="Cari nama atau NIM" /></div></div>
-        <div className="divide-y divide-slate-100">{attendees.map((person, i) => <div key={person.id} className="flex items-center gap-3 px-5 py-4"><span className="hidden w-6 text-xs text-slate-400 sm:block">{String(i + 1).padStart(2, "0")}</span><Avatar initials={person.initials} tone={person.tone} small /><div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold">{person.name}</div><div className="text-xs text-slate-400">{person.id}</div></div><div className="hidden text-right sm:block"><div className="text-sm font-semibold">{person.time}</div><div className="text-xs text-slate-400">WIB</div></div><StatusPill status={person.status} /></div>)}</div>
+        <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between"><div><div className="font-bold">Mahasiswa hadir</div><div className="mt-1 text-xs text-slate-400">{activeSession ? "Data langsung dari Supabase attendance_records" : "Diperbarui secara otomatis dalam simulasi"}</div></div><div className="relative"><Icon name="search" size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={query} onChange={(e) => setQuery(e.target.value)} className="w-full rounded-xl border border-slate-200 py-2.5 pl-10 pr-4 text-sm outline-none focus:border-blue-500 sm:w-64" placeholder="Cari nama atau NIM" /></div></div>
+        {attendees.length === 0 ? (
+          <div className="p-8 text-center text-sm text-slate-400">Belum ada mahasiswa yang melakukan presensi pada sesi ini.</div>
+        ) : (
+          <div className="divide-y divide-slate-100">{attendees.map((person, i) => <div key={person.id + i} className="flex items-center gap-3 px-5 py-4"><span className="hidden w-6 text-xs text-slate-400 sm:block">{String(i + 1).padStart(2, "0")}</span><Avatar initials={person.initials} tone={person.tone} small /><div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold">{person.name}</div><div className="text-xs text-slate-400">{person.id}</div></div><div className="hidden text-right sm:block"><div className="text-sm font-semibold">{person.time}</div><div className="text-xs text-slate-400">WIB</div></div><StatusPill status={person.status} /></div>)}</div>
+        )}
       </section>
       <aside className="space-y-4">
-        <div className="rounded-2xl bg-blue-600 p-5 text-white"><div className="text-sm text-blue-100">Kehadiran saat ini</div><div className="mt-2 text-4xl font-bold">34<span className="text-xl text-blue-200">/38</span></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-blue-500"><div className="h-full w-[89%] rounded-full bg-white" /></div><div className="mt-2 text-xs text-blue-100">89% mahasiswa telah hadir</div></div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5"><div className="font-bold">Kode QR sesi</div><div className="mx-auto mt-4 w-fit"><FakeQR small /></div><div className="mt-4 text-center text-xs text-slate-400">Berakhir pukul 09.40 WIB</div></div>
-        <Button variant="danger" className="w-full"><Icon name="x" size={17} />Akhiri sesi</Button>
+        <div className="rounded-2xl bg-blue-600 p-5 text-white"><div className="text-sm text-blue-100">Kehadiran saat ini</div><div className="mt-2 text-4xl font-bold">{activeSession ? dbAttendees.length : 34}<span className="text-xl text-blue-200">/{activeSession ? 1 : 38}</span></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-blue-500"><div className="h-full w-full rounded-full bg-white" /></div><div className="mt-2 text-xs text-blue-100">{activeSession ? "Tersinkronisasi dengan database" : "89% mahasiswa telah hadir"}</div></div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-5"><div className="font-bold">Kode QR sesi</div><div className="mx-auto mt-4 w-fit"><SessionQR value={activeSession?.qrTokenHash || "QR-DEMO"} small /></div><div className="mt-3 text-center font-mono text-xs font-semibold text-slate-600">{activeSession?.qrTokenHash || "QR-DEMO"}</div></div>
+        <Button variant="danger" onClick={onCloseSession} className="w-full"><Icon name="x" size={17} />Akhiri sesi</Button>
       </aside>
     </div> : <Recap leaveRequests={leaveRequests} />}
   </div>;
@@ -792,33 +1423,155 @@ function Recap({ leaveRequests }: { leaveRequests: LeaveRequest[] }) {
   </div>;
 }
 
-export default function App() {
+export default function App() { 
+useEffect(() => {
+  async function testSupabase() {
+    const { data: sessionData, error: sessionError } =
+      await supabase.auth.getSession();
+
+    if (sessionError) {
+      console.error("Supabase gagal:", sessionError.message);
+      return;
+    }
+
+    console.log("Supabase berhasil terhubung!");
+
+    const { data, error } = await supabase
+      .from("courses")
+      .select("*")
+      .limit(5);
+
+    if (error) {
+      console.error("Gagal membaca tabel courses:", error.message);
+    } else {
+      console.log("Berhasil membaca tabel courses:", data);
+    }
+  }
+
+  testSupabase();
+}, []);
+
+
   const [screen, setScreen] = useState<Screen>("login");
   const [role, setRole] = useState<Role>("student");
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [dbStudentCourses, setDbStudentCourses] = useState<CourseScheduleItem[]>([]);
+  const [dbLecturerSections, setDbLecturerSections] = useState<CourseScheduleItem[]>([]);
+  const [activeSession, setActiveSession] = useState<ActiveSessionInfo | null>(null);
   const [scanned, setScanned] = useState(false);
   const [sessionCreated, setSessionCreated] = useState(false);
   const [history, setHistory] = useState(initialHistory);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>(initialLeaveRequests);
-  const [selectedLeaveId, setSelectedLeaveId] = useState<number>(initialLeaveRequests[0].id);
+  const [selectedLeaveId, setSelectedLeaveId] = useState<string | number>(initialLeaveRequests[0].id);
   const navigate = (next: Screen) => setScreen(next);
-  const login = (nextRole: Role) => { setRole(nextRole); setScreen(nextRole === "student" ? "student-dashboard" : "lecturer-dashboard"); };
-  const switchRole = () => { const next = role === "student" ? "lecturer" : "student"; setRole(next); setScreen(next === "student" ? "student-dashboard" : "lecturer-dashboard"); };
-  const scanSuccess = () => {
-    if (scanned) return;
-    setScanned(true);
-    const attendance = { date: "Senin, 20 Mei 2024", course: "Pemrograman Berorientasi Objek", code: "IF2140", time: "07.56", status: "Hadir" };
-    setHistory((rows) => {
-      const existing = rows.findIndex((row) => row.date === attendance.date && (row.code === attendance.code || row.course.startsWith("Pemrograman")));
-      return existing >= 0 ? rows.map((row, index) => index === existing ? attendance : row) : [attendance, ...rows];
-    });
+  const login = (userProfile: UserProfile) => {
+    setProfile(userProfile);
+    setRole(userProfile.role);
+    setScreen(userProfile.role === "student" ? "student-dashboard" : "lecturer-dashboard");
   };
-  const submitLeaveRequest = (data: { courseCode: string; absenceDate: string; reason: LeaveReason; description: string; attachment?: string }) => {
+  const logout = () => {
+    setProfile(null);
+    setScreen("login");
+    void signOutFromSupabase();
+  };
+  const switchRole = () => { const next = role === "student" ? "lecturer" : "student"; setRole(next); setScreen(next === "student" ? "student-dashboard" : "lecturer-dashboard"); };
+
+  useEffect(() => {
+    getCurrentProfile().then((existing) => {
+      if (existing) {
+        setProfile(existing);
+        setRole(existing.role);
+        setScreen(existing.role === "student" ? "student-dashboard" : "lecturer-dashboard");
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!profile) {
+      setDbStudentCourses([]);
+      setDbLecturerSections([]);
+      setActiveSession(null);
+      return;
+    }
+    if (profile.role === "student") {
+      fetchStudentCourses(profile.id).then((courses) => {
+        setDbStudentCourses(courses);
+        const ids = courses.map((c) => c.sectionId);
+        fetchLatestActiveSession(ids).then(setActiveSession);
+      });
+      fetchStudentAttendanceHistory(profile.id).then((dbHist) => {
+        if (dbHist.length > 0) {
+          setHistory([...dbHist, ...initialHistory]);
+        }
+      });
+      fetchStudentLeaveRequests(profile.id).then((dbLeaves) => {
+        if (dbLeaves.length > 0) {
+          setLeaveRequests([...dbLeaves, ...initialLeaveRequests]);
+        }
+      });
+    } else {
+      fetchLecturerSections(profile.id).then((sections) => {
+        setDbLecturerSections(sections);
+        const ids = sections.map((s) => s.sectionId);
+        fetchLatestActiveSession(ids).then(setActiveSession);
+        fetchLecturerLeaveRequests(ids).then((dbLeaves) => {
+          if (dbLeaves.length > 0) {
+            setLeaveRequests([...dbLeaves, ...initialLeaveRequests]);
+          }
+        });
+      });
+    }
+  }, [profile]);
+
+  const scanSuccess = (session?: ActiveSessionInfo | null, timeLabel = "07.56") => {
+    setScanned(true);
+    const todayLabel = new Date().toLocaleDateString("id-ID", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    const attendance = {
+      date: session ? todayLabel.charAt(0).toUpperCase() + todayLabel.slice(1) : "Senin, 20 Mei 2024",
+      course: session?.courseName || "Pemrograman Berorientasi Objek",
+      code: session?.courseCode || "IF2140",
+      time: timeLabel,
+      status: "Hadir",
+    };
+    setHistory((rows) => [attendance, ...rows]);
+  };
+
+  const handleCloseSession = async () => {
+    if (activeSession) {
+      await closeAttendanceSession(activeSession.id);
+      setActiveSession(null);
+      setSessionCreated(false);
+    }
+    navigate("lecturer-dashboard");
+  };
+  const submitLeaveRequest = async (data: { courseCode: string; sectionId?: string; absenceDate: string; reason: LeaveReason; description: string; attachment?: string }) => {
+    if (profile && data.sectionId) {
+      const created = await createLeaveRequestInDb({
+        studentId: profile.id,
+        sectionId: data.sectionId,
+        absenceDate: data.absenceDate,
+        reason: data.reason,
+        description: data.description,
+        attachment: data.attachment,
+      });
+      setLeaveRequests((requests) => [created, ...requests]);
+      setSelectedLeaveId(created.id);
+      const pendingRecord = { date: formatAbsenceDate(data.absenceDate), course: created.course, code: created.code, time: "—", status: "Menunggu Verifikasi" };
+      setHistory((rows) => [pendingRecord, ...rows]);
+      return;
+    }
+
     const course = studentCourses.find((item) => item.code === data.courseCode)!;
     const id = Date.now();
     const request: LeaveRequest = {
       id,
-      student: "Agoy Salloh",
-      studentId: "2510511009",
+      student: profile?.full_name || "Agoy Salloh",
+      studentId: profile?.student_number || "2510511009",
       course: course.name,
       code: course.code,
       group: course.code === "IF2150" ? "Kelas B" : "Kelas A",
@@ -826,7 +1579,7 @@ export default function App() {
       reason: data.reason,
       description: data.description,
       attachment: data.attachment,
-      submittedAt: "Hari ini, 10.24",
+      submittedAt: "Hari ini",
       status: "Menunggu Persetujuan",
     };
     setLeaveRequests((requests) => [request, ...requests]);
@@ -837,9 +1590,17 @@ export default function App() {
       return existing >= 0 ? rows.map((row, index) => index === existing ? pendingRecord : row) : [pendingRecord, ...rows];
     });
   };
-  const decideLeaveRequest = (id: number, status: "Disetujui" | "Ditolak", lecturerNote: string) => {
+  const decideLeaveRequest = async (id: string | number, status: "Disetujui" | "Ditolak", lecturerNote: string) => {
     const request = leaveRequests.find((item) => item.id === id);
     if (!request) return;
+    if (typeof id === "string" && profile) {
+      await decideLeaveRequestInDb({
+        id,
+        lecturerId: profile.id,
+        status,
+        lecturerNote,
+      });
+    }
     setLeaveRequests((requests) => requests.map((item) => item.id === id ? { ...item, status, lecturerNote } : item));
     const attendanceStatus = status === "Disetujui" ? (request.reason === "Sakit" ? "Sakit" : "Izin") : "Tidak hadir";
     const attendanceRecord = { date: formatAbsenceDate(request.absenceDate), course: request.course, code: request.code, time: "—", status: attendanceStatus };
@@ -851,18 +1612,30 @@ export default function App() {
   if (screen === "login") return <Login onLogin={login} />;
   const title = role === "student" ? "Portal Mahasiswa" : "Portal Dosen";
   const selectedLeave = leaveRequests.find((request) => request.id === selectedLeaveId);
-  return <AppShell role={role} screen={screen} navigate={navigate} title={title} switchRole={switchRole}>
-    {screen === "student-dashboard" && <StudentDashboard navigate={navigate} attendanceCount={scanned ? 39 : 38} leaveRequests={leaveRequests} />}
-    {screen === "scan" && <Scanner navigate={navigate} scanned={scanned} onSuccess={scanSuccess} />}
+  return <AppShell role={role} screen={screen} navigate={navigate} title={title} switchRole={switchRole} profile={profile} onLogout={logout}>
+    {screen === "student-dashboard" && <StudentDashboard navigate={navigate} attendanceCount={scanned ? 39 : 38} leaveRequests={leaveRequests} courses={dbStudentCourses} profile={profile} onRefreshCourses={async () => { if (profile) setDbStudentCourses(await fetchStudentCourses(profile.id)); }} />}
+    {screen === "scan" && <Scanner navigate={navigate} scanned={scanned} onSuccess={scanSuccess} activeSession={activeSession} profile={profile} />}
     {screen === "history" && <AttendanceHistory history={history} />}
-    {screen === "leave-form" && <LeaveRequestForm navigate={navigate} onSubmit={submitLeaveRequest} />}
+    {screen === "leave-form" && <LeaveRequestForm navigate={navigate} onSubmit={submitLeaveRequest} courses={dbStudentCourses} />}
     {screen === "leave-history" && <LeaveHistory requests={leaveRequests} navigate={navigate} onSelect={setSelectedLeaveId} />}
     {screen === "leave-detail-student" && <StudentLeaveDetail request={selectedLeave} navigate={navigate} />}
-    {screen === "lecturer-dashboard" && <LecturerDashboard navigate={navigate} leaveRequests={leaveRequests} />}
+    {screen === "lecturer-dashboard" && <LecturerDashboard navigate={navigate} leaveRequests={leaveRequests} sections={dbLecturerSections} profile={profile} onRefreshSections={async () => { if (profile) setDbLecturerSections(await fetchLecturerSections(profile.id)); }} />}
     {screen === "leave-requests" && <LecturerLeaveRequests requests={leaveRequests} navigate={navigate} onSelect={setSelectedLeaveId} />}
     {screen === "leave-detail-lecturer" && <LecturerLeaveDetail request={selectedLeave} navigate={navigate} onDecision={decideLeaveRequest} />}
-    {screen === "create-session" && <CreateSession navigate={navigate} onCreate={() => setSessionCreated(true)} />}
-    {screen === "live" && <LiveAttendance navigate={navigate} sessionCreated={sessionCreated} leaveRequests={leaveRequests} />}
+    {screen === "create-session" && <CreateSession navigate={navigate} sections={dbLecturerSections} onCreate={(session) => { setActiveSession(session); setSessionCreated(true); }} />}
+    {screen === "live" && <LiveAttendance navigate={navigate} sessionCreated={sessionCreated} leaveRequests={leaveRequests} activeSession={activeSession} onCloseSession={handleCloseSession} />}
   </AppShell>;
 }
+
+
+
+
+
+
+
+
+
+
+
+
 
