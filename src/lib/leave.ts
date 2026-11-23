@@ -100,18 +100,25 @@ export async function createLeaveRequestInDb(params: {
   studentId: string;
   sectionId: string;
   absenceDate: string;
-  reason: "Sakit" | "Izin" | "Dispensasi";
+  reason: string;
   description: string;
   attachment?: string;
 }): Promise<DbLeaveRequest> {
+  const normalizedReason: "Sakit" | "Izin" | "Dispensasi" =
+    params.reason === "Sakit"
+      ? "Sakit"
+      : params.reason === "Dispensasi"
+      ? "Dispensasi"
+      : "Izin";
+
   const { data, error } = await supabase
     .from("leave_requests")
     .insert({
       student_id: params.studentId,
       section_id: params.sectionId,
       absence_date: params.absenceDate,
-      reason: params.reason,
-      description: params.description || "Pengajuan ketidakhadiran mahasiswa.",
+      reason: normalizedReason,
+      description: params.description || `Alasan: ${params.reason}`,
       attachment: params.attachment || null,
       status: "Menunggu Persetujuan",
     })
@@ -130,16 +137,63 @@ export async function decideLeaveRequestInDb(params: {
   status: "Disetujui" | "Ditolak";
   lecturerNote: string;
 }): Promise<void> {
-  const { error } = await supabase
+  const { data: leaveRow, error } = await supabase
     .from("leave_requests")
     .update({
       status: params.status,
       lecturer_note: params.lecturerNote,
       decided_by: params.lecturerId,
     })
-    .eq("id", params.id);
+    .eq("id", params.id)
+    .select("student_id, section_id, absence_date, reason")
+    .single();
 
   if (error) {
     throw new Error(error.message);
   }
+
+  if (params.status === "Disetujui" && leaveRow?.student_id && leaveRow?.section_id) {
+    const dbStatus = leaveRow.reason === "Sakit" ? "sick" : leaveRow.reason === "Dispensasi" ? "dispensation" : "excused";
+    const { data: sessions } = await supabase
+      .from("attendance_sessions")
+      .select("id, starts_at, status")
+      .eq("section_id", leaveRow.section_id)
+      .order("starts_at", { ascending: false })
+      .limit(10);
+
+    let targetSessionId: string | null = null;
+    if (sessions && sessions.length > 0) {
+      const sameDate = sessions.find(
+        (s: any) => s.starts_at && String(s.starts_at).slice(0, 10) === String(leaveRow.absence_date).slice(0, 10)
+      );
+      const openSession = sessions.find((s: any) => s.status === "open");
+      targetSessionId = (sameDate || openSession || sessions[0]).id;
+    }
+
+    if (targetSessionId) {
+      const { data: existingRec } = await supabase
+        .from("attendance_records")
+        .select("id")
+        .eq("session_id", targetSessionId)
+        .eq("student_id", leaveRow.student_id)
+        .maybeSingle();
+
+      if (existingRec?.id) {
+        await supabase
+          .from("attendance_records")
+          .update({ status: dbStatus })
+          .eq("id", existingRec.id);
+      } else {
+        await supabase.from("attendance_records").insert({
+          session_id: targetSessionId,
+          student_id: leaveRow.student_id,
+          check_in_at: new Date().toISOString(),
+          status: dbStatus,
+        });
+      }
+    }
+  }
 }
+
+
+

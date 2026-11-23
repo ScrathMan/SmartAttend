@@ -16,8 +16,11 @@ import {
   createAttendanceSession,
   fetchLatestActiveSession,
   fetchSessionAttendees,
+  fetchSemesterRecapMatrix,
   fetchStudentAttendanceHistory,
+  SemesterStudentRow,
   LiveAttendeeItem,
+  rotateSessionQrToken,
   submitStudentCheckIn,
 } from "./lib/attendance";
 
@@ -34,7 +37,8 @@ type Screen =
   | "leave-requests"
   | "leave-detail-lecturer"
   | "create-session"
-  | "live";
+  | "live"
+  | "semester-recap";
 type LeaveReason = "Sakit" | "Izin Keperluan Lain" | "Keperluan Keluarga";
 type LeaveStatus = "Menunggu Persetujuan" | "Disetujui" | "Ditolak";
 type LeaveRequest = {
@@ -81,91 +85,9 @@ const studentCourses = [
   { time: "13.00", end: "14.40", name: "Interaksi Manusia dan Komputer", code: "IF2160", room: "Dewi Sartika 303", color: "amber" },
 ];
 
-const initialHistory = [
-  { date: "Rabu, 22 Mei 2024", course: "Basis Data", code: "IF2150", time: "—", status: "Menunggu Verifikasi" },
-  { date: "Rabu, 15 Mei 2024", course: "Interaksi Manusia dan Komputer", code: "IF2160", time: "—", status: "Izin" },
-  { date: "Senin, 6 Mei 2024", course: "Pemrograman Berorientasi Objek", code: "IF2140", time: "—", status: "Sakit" },
-  { date: "Senin, 20 Mei 2024", course: "Pemrograman Berorientasi Objek", code: "FIK-LAB 201", time: "07.56", status: "Hadir" },
-  { date: "Jumat, 17 Mei 2024", course: "Metode Penelitian", code: "Dewi Sartika 301", time: "09.58", status: "Hadir" },
-  { date: "Kamis, 16 Mei 2024", course: "Manajemen Proyek Perangkat Lunak", code: "FIK-LAB 302", time: "10.14", status: "Terlambat" },
-  { date: "Selasa, 14 Mei 2024", course: "Interaksi Manusia dan Komputer", code: "Dewi Sartika 303", time: "—", status: "Tidak hadir" },
-  { date: "Senin, 13 Mei 2024", course: "Jaringan Komputer", code: "FIK-LAB 301", time: "08.02", status: "Hadir" },
-  { date: "Jumat, 10 Mei 2024", course: "Metode Penelitian", code: "Dewi Sartika 301", time: "09.55", status: "Hadir" },
-];
+const initialHistory: Array<{ date: string; course: string; code: string; time: string; status: string }> = [];
 
-const initialLeaveRequests: LeaveRequest[] = [
-  {
-    id: 1001,
-    student: "Agoy Salloh",
-    studentId: "2510511009",
-    course: "Basis Data",
-    code: "IF2150",
-    group: "Kelas B",
-    absenceDate: "2024-05-22",
-    reason: "Keperluan Keluarga",
-    description: "Menghadiri acara keluarga di luar kota.",
-    attachment: "surat-keterangan-keluarga.pdf",
-    submittedAt: "21 Mei 2024, 14.25",
-    status: "Menunggu Persetujuan",
-  },
-  {
-    id: 1002,
-    student: "Agoy Salloh",
-    studentId: "2510511009",
-    course: "Interaksi Manusia dan Komputer",
-    code: "IF2160",
-    group: "Kelas A",
-    absenceDate: "2024-05-15",
-    reason: "Izin Keperluan Lain",
-    description: "Mengikuti kegiatan kompetisi mahasiswa tingkat nasional.",
-    submittedAt: "13 Mei 2024, 09.10",
-    status: "Disetujui",
-    lecturerNote: "Izin disetujui. Silakan pelajari materi pertemuan secara mandiri.",
-  },
-  {
-    id: 1003,
-    student: "Agoy Salloh",
-    studentId: "2510511009",
-    course: "Pemrograman Berorientasi Objek",
-    code: "IF2140",
-    group: "Kelas A",
-    absenceDate: "2024-05-06",
-    reason: "Sakit",
-    description: "Demam dan perlu beristirahat sesuai arahan dokter.",
-    attachment: "surat-keterangan-dokter.pdf",
-    submittedAt: "6 Mei 2024, 06.45",
-    status: "Disetujui",
-    lecturerNote: "Semoga lekas pulih. Materi dapat diakses melalui portal kelas.",
-  },
-  {
-    id: 1004,
-    student: "Agoy Salloh",
-    studentId: "2510511009",
-    course: "Interaksi Manusia dan Komputer",
-    code: "IF2160",
-    group: "Kelas A",
-    absenceDate: "2024-05-14",
-    reason: "Keperluan Keluarga",
-    description: "Mengantar anggota keluarga untuk pemeriksaan kesehatan.",
-    submittedAt: "13 Mei 2024, 18.20",
-    status: "Ditolak",
-    lecturerNote: "Dokumen pendukung belum tersedia. Silakan hubungi dosen untuk klarifikasi.",
-  },
-  {
-    id: 1005,
-    student: "Raka Aditya Pratama",
-    studentId: "18222007",
-    course: "Pemrograman",
-    code: "IF2140",
-    group: "Kelas A",
-    absenceDate: "2024-05-20",
-    reason: "Izin Keperluan Lain",
-    description: "Ada agenda organisasi di luar kampus.",
-    submittedAt: "19 Mei 2024, 20.30",
-    status: "Ditolak",
-    lecturerNote: "Agenda tidak disertai surat tugas resmi dan diajukan melewati batas waktu.",
-  },
-];
+const initialLeaveRequests: LeaveRequest[] = [];
 
 const lecturerClasses = [
   { code: "IF2140", name: "Pemrograman Berorientasi Objek", group: "Kelas A", students: 38, attended: 34, time: "08.00 – 09.40", room: "Lab Komputer 3", color: "blue" },
@@ -286,7 +208,23 @@ function Avatar({ initials, tone = "blue", small = false }: { initials: string; 
   return <div className={`grid shrink-0 place-items-center rounded-full font-bold ${small ? "size-9 text-xs" : "size-11 text-sm"} ${tones[tone]}`}>{initials}</div>;
 }
 
-function Sidebar({ role, screen, navigate, switchRole, profile, onLogout }: { role: Role; screen: Screen; navigate: (s: Screen) => void; switchRole: () => void; profile: UserProfile | null; onLogout: () => void }) {
+function Sidebar({
+  role,
+  screen,
+  navigate,
+  profile,
+  onLogout,
+  mobileOpen,
+  onCloseMobile,
+}: {
+  role: Role;
+  screen: Screen;
+  navigate: (s: Screen) => void;
+  profile: UserProfile | null;
+  onLogout: () => void;
+  mobileOpen: boolean;
+  onCloseMobile: () => void;
+}) {
   const displayName = profile?.full_name || (role === "student" ? "Agoy Salloh" : "Dr. Bima Santoso");
   const initials = displayName.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
   const studentNav = [
@@ -300,46 +238,252 @@ function Sidebar({ role, screen, navigate, switchRole, profile, onLogout }: { ro
     { label: "Beranda", icon: "dashboard" as IconName, screen: "lecturer-dashboard" as Screen },
     { label: "Buat Sesi", icon: "plus" as IconName, screen: "create-session" as Screen },
     { label: "Presensi Live", icon: "live" as IconName, screen: "live" as Screen },
+    { label: "Rekap Semester", icon: "history" as IconName, screen: "semester-recap" as Screen },
     { label: "Permohonan Izin", icon: "calendar" as IconName, screen: "leave-requests" as Screen },
   ];
   const nav = role === "student" ? studentNav : lecturerNav;
-  return <>
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200 bg-white px-5 py-6 lg:flex">
-      <div className="px-2"><Logo /></div>
+
+  const sidebarBody = (isMobile: boolean) => (
+    <>
+      <div className="flex items-center justify-between px-2">
+        <Logo />
+        {isMobile && (
+          <Button variant="ghost" onClick={onCloseMobile} aria-label="Tutup menu" className="!size-9 !p-0 text-slate-400 hover:text-slate-700">
+            <Icon name="x" size={18} />
+          </Button>
+        )}
+      </div>
       <nav className="mt-10 space-y-1.5">
-        {nav.map((item) => <Button key={item.screen} onClick={() => navigate(item.screen)} variant="ghost" className={`w-full !justify-start !px-3.5 ${screen === item.screen ? "!bg-blue-50 !text-blue-700" : ""}`}><Icon name={item.icon} size={19} />{item.label}</Button>)}
+        {nav.map((item) => (
+          <Button
+            key={item.screen}
+            onClick={() => {
+              navigate(item.screen);
+              if (isMobile) onCloseMobile();
+            }}
+            variant="ghost"
+            className={`w-full !justify-start !px-3.5 ${screen === item.screen ? "!bg-blue-50 !text-blue-700" : ""}`}
+          >
+            <Icon name={item.icon} size={19} />
+            {item.label}
+          </Button>
+        ))}
       </nav>
       <div className="mt-auto border-t border-slate-100 pt-5">
-        <Button variant="ghost" onClick={switchRole} className="w-full !justify-start !px-3">
+        <div className="flex items-center gap-3 px-3 py-2">
           <Avatar initials={initials} small />
-          <span className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-semibold text-slate-800">{displayName}</span><span className="block text-xs font-normal text-slate-400">Ganti ke {role === "student" ? "Dosen" : "Mahasiswa"}</span></span>
-          <Icon name="chevron" size={16} />
+          <span className="min-w-0 flex-1 text-left">
+            <span className="block truncate text-sm font-semibold text-slate-800">{displayName}</span>
+            <span className="block text-xs font-normal text-slate-400">{role === "student" ? "Akun Mahasiswa" : "Akun Dosen"}</span>
+          </span>
+        </div>
+        <Button
+          variant="ghost"
+          onClick={() => {
+            if (isMobile) onCloseMobile();
+            onLogout();
+          }}
+          className="mt-1 w-full !justify-start !px-3 text-slate-500"
+        >
+          <Icon name="logout" size={18} />
+          Keluar
         </Button>
-        <Button variant="ghost" onClick={onLogout} className="mt-1 w-full !justify-start !px-3 text-slate-500"><Icon name="logout" size={18} />Keluar</Button>
       </div>
-    </aside>
-    <nav className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-slate-200 bg-white/95 px-2 py-2 backdrop-blur lg:hidden">
-      {nav.map((item) => <Button key={item.screen} onClick={() => navigate(item.screen)} variant="ghost" className={`flex-1 !flex-col !gap-1 !px-1 !py-1.5 text-[11px] ${screen === item.screen ? "!bg-blue-50 !text-blue-700" : ""}`}><Icon name={item.icon} size={19} />{item.label}</Button>)}
-    </nav>
-  </>;
+    </>
+  );
+
+  return (
+    <>
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200 bg-white px-5 py-6 lg:flex">
+        {sidebarBody(false)}
+      </aside>
+      {mobileOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs" onClick={onCloseMobile} />
+          <aside className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[82vw] flex-col border-r border-slate-200 bg-white px-5 py-6 shadow-2xl">
+            {sidebarBody(true)}
+          </aside>
+        </div>
+      )}
+    </>
+  );
 }
 
-function Topbar({ title, role, onSwitch, profile, onLogout }: { title: string; role: Role; onSwitch: () => void; profile: UserProfile | null; onLogout: () => void }) {
+type AppNotification = {
+  id: string;
+  title: string;
+  body: string;
+  time: string;
+  tone: "blue" | "emerald" | "red" | "amber";
+  targetScreen: Screen;
+  leaveId?: string | number;
+};
+
+function Topbar({
+  title,
+  role,
+  profile,
+  onLogout,
+  notifications,
+  onOpenNotification,
+  onOpenMenu,
+}: {
+  title: string;
+  role: Role;
+  profile: UserProfile | null;
+  onLogout: () => void;
+  notifications: AppNotification[];
+  onOpenNotification: (item: AppNotification) => void;
+  onOpenMenu: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [readIds, setReadIds] = useState<string[]>([]);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, []);
+
   const displayName = profile?.full_name || (role === "student" ? "Agoy Salloh" : "Dr. Bima Santoso");
   const initials = displayName.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+  const unreadCount = notifications.filter((n) => !readIds.includes(n.id)).length;
+
+  const markAllRead = () => {
+    setReadIds(notifications.map((n) => n.id));
+  };
+
+  const toneBadge: Record<AppNotification["tone"], string> = {
+    blue: "bg-blue-100 text-blue-700",
+    emerald: "bg-emerald-100 text-emerald-700",
+    red: "bg-red-100 text-red-700",
+    amber: "bg-amber-100 text-amber-700",
+  };
+
   return <header className={`sticky top-0 z-20 flex h-16 border-b border-slate-200/80 bg-white/90 px-5 backdrop-blur md:px-8 items-center justify-between w-full`}>
-    <div className="flex items-center gap-3 lg:hidden"><Logo compact /><span className="font-bold text-slate-900">{title}</span></div>
+    <button
+      type="button"
+      onClick={onOpenMenu}
+      aria-label="Buka menu navigasi"
+      className="group flex items-center gap-2 rounded-2xl border border-slate-200/90 bg-slate-50/90 px-2 py-1.5 shadow-2xs transition hover:border-blue-200 hover:bg-blue-50/60 active:scale-95 lg:hidden"
+    >
+      <Logo compact />
+      <span className="font-bold text-slate-900">{title}</span>
+      <span className="grid size-5 place-items-center rounded-lg bg-white text-slate-500 shadow-2xs ring-1 ring-slate-200/80 transition group-hover:text-blue-600">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </span>
+    </button>
     <div className="hidden lg:block text-sm font-semibold text-slate-500">{title}</div>
     <div className="flex items-center gap-2">
-      <Button variant="ghost" className="!size-10 !p-0"><Icon name="bell" size={19} /></Button>
-      <Button variant="secondary" onClick={onSwitch} className="hidden sm:inline-flex !rounded-full !py-2"><Avatar initials={initials} small /><span>{role === "student" ? "Mahasiswa" : "Dosen"}</span><Icon name="chevron" size={15} /></Button>
+      <div className="relative" ref={dropdownRef}>
+        <Button
+          variant="ghost"
+          onClick={() => setOpen((v) => !v)}
+          aria-label="Notifikasi"
+          className="relative !size-10 !p-0"
+        >
+          <Icon name="bell" size={19} />
+          {unreadCount > 0 && (
+            <span className="absolute right-1.5 top-1.5 grid min-w-4 place-items-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-4 text-white">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          )}
+        </Button>
+
+        {open && (
+          <div className="absolute -right-9 sm:right-0 mt-2 w-[min(17.5rem,calc(100vw-2rem))] sm:w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl z-50">
+            <div className="flex items-center justify-between border-b border-slate-100 px-3.5 py-2.5">
+              <div>
+                <div className="text-xs font-bold text-slate-900">Notifikasi</div>
+                <div className="text-[10px] text-slate-400">
+                  {unreadCount > 0 ? `${unreadCount} belum dibaca` : "Semua sudah dibaca"}
+                </div>
+              </div>
+              {unreadCount > 0 && (
+                <button
+                  type="button"
+                  onClick={markAllRead}
+                  className="text-[11px] font-semibold text-blue-600 hover:text-blue-700"
+                >
+                  Tandai dibaca
+                </button>
+              )}
+            </div>
+
+            <div className="max-h-60 divide-y divide-slate-100 overflow-y-auto">
+              {notifications.length === 0 ? (
+                <div className="px-3.5 py-6 text-center text-xs text-slate-400">
+                  Belum ada pemberitahuan terbaru.
+                </div>
+              ) : (
+                notifications.map((item) => {
+                  const isUnread = !readIds.includes(item.id);
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        if (isUnread) setReadIds((prev) => [...prev, item.id]);
+                        setOpen(false);
+                        onOpenNotification(item);
+                      }}
+                      className={`flex w-full items-start gap-2.5 px-3.5 py-2.5 text-left transition hover:bg-slate-50 ${isUnread ? "bg-blue-50/40" : ""}`}
+                    >
+                      <span className={`mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg text-xs font-bold ${toneBadge[item.tone]}`}>
+                        <Icon name={item.tone === "emerald" ? "check" : item.tone === "red" ? "x" : item.tone === "amber" ? "clock" : "qr"} size={14} />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span className="truncate text-[11px] font-bold text-slate-800">{item.title}</span>
+                          {isUnread && <span className="size-1.5 shrink-0 rounded-full bg-blue-600" />}
+                        </div>
+                        <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-slate-600">{item.body}</p>
+                        <div className="mt-0.5 text-[10px] text-slate-400">{item.time}</div>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="hidden sm:inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700"><Avatar initials={initials} small /><span>{role === "student" ? "Mahasiswa" : "Dosen"}</span></div>
       <Button variant="ghost" onClick={onLogout} className="!px-3 !py-2 text-slate-500 hover:text-red-600"><Icon name="logout" size={18} /><span className="hidden sm:inline">Keluar</span></Button>
     </div>
   </header>;
 }
 
-function AppShell({ children, role, screen, navigate, title, switchRole, profile, onLogout }: { children: ReactNode; role: Role; screen: Screen; navigate: (s: Screen) => void; title: string; switchRole: () => void; profile: UserProfile | null; onLogout: () => void }) {
-  return <div className="min-h-screen bg-slate-50 text-slate-900"><Sidebar role={role} screen={screen} navigate={navigate} switchRole={switchRole} profile={profile} onLogout={onLogout} /><div className="lg:pl-64"><Topbar role={role} title={title} onSwitch={switchRole} profile={profile} onLogout={onLogout} /><main className="mx-auto max-w-7xl px-5 py-7 pb-28 md:px-8 md:py-9 lg:pb-10">{children}</main></div></div>;
+function AppShell({
+  children,
+  role,
+  screen,
+  navigate,
+  title,
+  profile,
+  onLogout,
+  notifications,
+  onOpenNotification,
+}: {
+  children: ReactNode;
+  role: Role;
+  screen: Screen;
+  navigate: (s: Screen) => void;
+  title: string;
+  profile: UserProfile | null;
+  onLogout: () => void;
+  notifications: AppNotification[];
+  onOpenNotification: (item: AppNotification) => void;
+}) {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  return <div className="min-h-screen bg-slate-50 text-slate-900"><Sidebar role={role} screen={screen} navigate={navigate} profile={profile} onLogout={onLogout} mobileOpen={mobileMenuOpen} onCloseMobile={() => setMobileMenuOpen(false)} /><div className="lg:pl-64"><Topbar role={role} title={title} profile={profile} onLogout={onLogout} notifications={notifications} onOpenNotification={onOpenNotification} onOpenMenu={() => setMobileMenuOpen(true)} /><main className="mx-auto max-w-7xl px-5 py-7 pb-12 md:px-8 md:py-9 lg:pb-10">{children}</main></div></div>;
 }
 
 function PageHeading({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description: string; action?: ReactNode }) {
@@ -466,11 +610,32 @@ function Login({ onLogin }: { onLogin: (profile: UserProfile) => void }) {
     </div>
   </div>;
 }
-function StudentDashboard({ navigate, attendanceCount, leaveRequests, courses, profile, onRefreshCourses }: { navigate: (s: Screen) => void; attendanceCount: number; leaveRequests: LeaveRequest[]; courses: CourseScheduleItem[]; profile: UserProfile | null; onRefreshCourses?: () => Promise<void> }) {
+function StudentDashboard({ navigate, history, leaveRequests, courses, profile, onRefreshCourses }: { navigate: (s: Screen) => void; history: Array<{ date: string; course: string; code: string; time: string; status: string }>; leaveRequests: LeaveRequest[]; courses: CourseScheduleItem[]; profile: UserProfile | null; onRefreshCourses?: () => Promise<void> }) {
   const [catalog, setCatalog] = useState<CourseScheduleItem[]>([]);
   const [showCatalog, setShowCatalog] = useState(false);
   const [enrollingId, setEnrollingId] = useState<string | null>(null);
-  const [selectedDay, setSelectedDay] = useState<string>("Semua");
+  const dayNames = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+  const now = new Date();
+  const todayName = dayNames[now.getDay()];
+  const currentHour = now.getHours();
+  const greeting =
+    currentHour < 11
+      ? "Selamat pagi"
+      : currentHour < 15
+      ? "Selamat siang"
+      : currentHour < 18
+      ? "Selamat sore"
+      : "Selamat malam";
+  const todayFullDate = now.toLocaleDateString("id-ID", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  const [selectedDay, setSelectedDay] = useState<string>(() =>
+    ["Senin", "Selasa", "Rabu", "Kamis", "Jumat"].includes(todayName) ? todayName : "Semua"
+  );
 
   useEffect(() => {
     fetchAllAvailableSections().then(setCatalog);
@@ -494,7 +659,21 @@ function StudentDashboard({ navigate, attendanceCount, leaveRequests, courses, p
   };
 
   const enrolledIds = new Set(courses.map((c) => c.sectionId));
-  const rawCourses = courses.length > 0 ? courses : studentCourses.map((c) => ({ ...c, dayOfWeek: "Senin", department: profile?.department || "Informatika", lecturerName: "Dosen Pengampu" }));
+  const dayOrder: Record<string, number> = { Senin: 1, Selasa: 2, Rabu: 3, Kamis: 4, Jumat: 5, Sabtu: 6, Minggu: 7 };
+  const parseStartMinutes = (timeStr?: string) => {
+    const match = (timeStr || "").match(/(\d{1,2})[.:](\d{2})/);
+    return match ? parseInt(match[1], 10) * 60 + parseInt(match[2], 10) : 9999;
+  };
+  const sortCoursesBySchedule = (list: any[]) =>
+    [...list].sort((a, b) => {
+      const dayDiff = (dayOrder[a.dayOfWeek || "Senin"] || 99) - (dayOrder[b.dayOfWeek || "Senin"] || 99);
+      return dayDiff !== 0 ? dayDiff : parseStartMinutes(a.time) - parseStartMinutes(b.time);
+    });
+
+  const rawCourses = sortCoursesBySchedule(
+    courses.length > 0 ? courses : studentCourses.map((c) => ({ ...c, dayOfWeek: "Senin", department: profile?.department || "Informatika", lecturerName: "Dosen Pengampu" }))
+  );
+  const todayCourses = rawCourses.filter((c: any) => (c.dayOfWeek || "Senin") === todayName);
   const displayCourses = selectedDay === "Semua"
     ? rawCourses
     : rawCourses.filter((c: any) => (c.dayOfWeek || "Senin") === selectedDay);
@@ -502,7 +681,7 @@ function StudentDashboard({ navigate, attendanceCount, leaveRequests, courses, p
   const deptLabel = profile?.department || "Informatika";
   const pending = leaveRequests.filter((request) => request.studentId === (profile?.student_number || "2510511009") && request.status === "Menunggu Persetujuan").length;
   return <div>
-    <PageHeading eyebrow={`Prodi ${deptLabel} • NIM ${profile?.student_number || "2510511009"}`} title={`Selamat pagi, ${firstName}!`} description={"Berikut jadwal kuliah lintas hari dan presensimu."} action={<div className="flex flex-wrap gap-2 sm:self-center"><Button variant="secondary" onClick={() => setShowCatalog((v) => !v)}><Icon name="book" size={18} />{showCatalog ? "Tutup Katalog KRS" : "Ambil Kelas / KRS"}</Button><Button onClick={() => navigate("scan")}><Icon name="camera" size={18} />Scan QR Sekarang</Button></div>} />
+    <PageHeading eyebrow={`Prodi ${deptLabel} • NIM ${profile?.student_number || "2510511009"} • ${todayFullDate}`} title={`${greeting}, ${firstName}!`} description={`Jadwal hari ini (${todayName}): ${todayCourses.length} mata kuliah terjadwal.`} action={<div className="flex flex-wrap gap-2 sm:self-center"><Button variant="secondary" onClick={() => setShowCatalog((v) => !v)}><Icon name="book" size={18} />{showCatalog ? "Tutup Katalog KRS" : "Ambil Kelas / KRS"}</Button><Button onClick={() => navigate("scan")}><Icon name="camera" size={18} />Scan QR Sekarang</Button></div>} />
     {showCatalog && (
       <section className="mb-7 rounded-2xl border border-blue-200 bg-blue-50/70 p-5 shadow-sm md:p-6">
         <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
@@ -544,11 +723,43 @@ function StudentDashboard({ navigate, attendanceCount, leaveRequests, courses, p
         )}
       </section>
     )}
-    <div className="grid gap-4 sm:grid-cols-3">
-      <StatCard icon="check" label="Kehadiran semester ini" value={`${attendanceCount}/42`} detail="92% tingkat kehadiran" tone="emerald" />
-      <StatCard icon="calendar" label="Jadwal hari ini" value={`${displayCourses.length} Kelas`} detail={`Kelas pertama pukul ${displayCourses[0]?.time || "08.00"}`} tone="blue" />
-      <StatCard icon="clock" label="Total keterlambatan" value="2 Kali" detail="Berusahalah datang lebih tepat waktu" tone="amber" />
-    </div>
+    {(() => {
+      const validRecords = (history || []).filter((h) => h.status !== "Menunggu Verifikasi");
+      const hadirCount = validRecords.filter((h) => h.status === "Hadir").length;
+      const lateCount = validRecords.filter((h) => h.status === "Terlambat").length;
+      const izinCount = validRecords.filter((h) => h.status === "Izin").length;
+      const sakitDispenCount = validRecords.filter((h) => h.status === "Sakit" || h.status === "Dispensasi").length;
+      const attendedCount = hadirCount + lateCount;
+      const totalSessions = validRecords.length;
+      const totalPoints = hadirCount * 1.0 + sakitDispenCount * 1.0 + izinCount * 0.75 + lateCount * 0.5;
+      const pct = totalSessions > 0 ? Math.min(100, Math.round((totalPoints / totalSessions) * 100)) : 0;
+
+      return (
+        <div className="grid gap-4 sm:grid-cols-3">
+          <StatCard
+            icon="check"
+            label="Kehadiran semester ini"
+            value={`${attendedCount}/${totalSessions}`}
+            detail={totalSessions > 0 ? `${pct}% tingkat kehadiran` : "Belum ada catatan presensi"}
+            tone="emerald"
+          />
+          <StatCard
+            icon="calendar"
+            label={`Jadwal hari ini (${todayName})`}
+            value={`${todayCourses.length} Kelas`}
+            detail={todayCourses.length > 0 ? `Kelas pertama pukul ${todayCourses[0]?.time}` : "Tidak ada jadwal kuliah hari ini"}
+            tone="blue"
+          />
+          <StatCard
+            icon="clock"
+            label="Total keterlambatan"
+            value={`${lateCount} Kali`}
+            detail={lateCount > 0 ? "Berusahalah datang lebih tepat waktu" : "Belum ada keterlambatan"}
+            tone="amber"
+          />
+        </div>
+      );
+    })()}
     <section className="mt-7 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div><div className="text-lg font-bold">Pengajuan izin</div><p className="mt-1 text-sm text-slate-500">Ajukan ketidakhadiran dan pantau keputusan dosen.</p></div>
@@ -561,8 +772,8 @@ function StudentDashboard({ navigate, attendanceCount, leaveRequests, courses, p
     </section>
     <div className="mt-7 grid gap-7 xl:grid-cols-[1.55fr_0.75fr]">
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><div className="text-lg font-bold">Jadwal perkuliahan</div><div className="mt-1 text-xs text-slate-400">{displayCourses.length} mata kuliah ditampilkan</div></div><div className="flex flex-wrap gap-1.5">{["Semua", "Senin", "Selasa", "Rabu", "Kamis", "Jumat"].map((d) => <button key={d} type="button" onClick={() => setSelectedDay(d)} className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${selectedDay === d ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>{d}</button>)}</div></div>
-        <div className="space-y-3">{displayCourses.map((course, i) => <ScheduleRow key={course.code} course={course} active={i === 0} onScan={() => navigate("scan")} />)}</div>
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><div className="text-lg font-bold">Jadwal perkuliahan</div><div className="mt-1 text-xs text-slate-400">{displayCourses.length} mata kuliah ditampilkan {selectedDay === todayName ? `(Hari ini • ${todayName})` : ""}</div></div><div className="flex flex-wrap gap-1.5">{["Semua", "Senin", "Selasa", "Rabu", "Kamis", "Jumat"].map((d) => <button key={d} type="button" onClick={() => setSelectedDay(d)} className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${selectedDay === d ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>{d === todayName ? `${d} (Hari ini)` : d}</button>)}</div></div>
+        <div className="space-y-3">{displayCourses.length === 0 ? <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-400">Tidak ada jadwal perkuliahan pada hari {selectedDay}.</div> : displayCourses.map((course: any) => <ScheduleRow key={course.sectionId || course.code} course={course} active={(course.dayOfWeek || "Senin") === todayName} onScan={() => navigate("scan")} />)}</div>
       </section>
       <section className="overflow-hidden rounded-2xl bg-blue-600 p-6 text-white shadow-lg shadow-blue-100">
         <div className="flex items-start justify-between"><div className="grid size-12 place-items-center rounded-2xl bg-white/15"><Icon name="qr" size={25} /></div><span className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">Siap dipindai</span></div>
@@ -574,7 +785,35 @@ function StudentDashboard({ navigate, attendanceCount, leaveRequests, courses, p
     <div className="mt-7 rounded-2xl border border-slate-200 bg-white p-6">
       <div className="flex flex-col justify-between gap-5 md:flex-row md:items-center">
         <div><div className="text-lg font-bold">Ringkasan kehadiran</div><p className="mt-1 text-sm text-slate-500">Semester Genap</p></div>
-        <div className="flex items-center gap-6"><div className="relative grid size-20 place-items-center rounded-full bg-[conic-gradient(#2563eb_92%,#e2e8f0_0)]"><div className="grid size-14 place-items-center rounded-full bg-white text-sm font-bold text-slate-800">92%</div></div><div className="grid grid-cols-2 gap-x-7 gap-y-2 text-sm"><Legend color="bg-emerald-500" label="Hadir" value={attendanceCount.toString()} /><Legend color="bg-amber-500" label="Terlambat" value="2" /><Legend color="bg-red-500" label="Tidak hadir" value="2" /><Legend color="bg-slate-300" label="Sisa kelas" value="4" /></div></div>
+        {(() => {
+          const valid = (history || []).filter((h) => h.status !== "Menunggu Verifikasi");
+          const hCount = valid.filter((h) => h.status === "Hadir").length;
+          const tCount = valid.filter((h) => h.status === "Terlambat").length;
+          const iCount = valid.filter((h) => h.status === "Izin").length;
+          const sdCount = valid.filter((h) => h.status === "Sakit" || h.status === "Dispensasi").length;
+          const aCount = valid.filter((h) => h.status === "Tidak hadir").length;
+          const total = valid.length;
+          const pts = hCount * 1.0 + sdCount * 1.0 + iCount * 0.75 + tCount * 0.5;
+          const pct = total > 0 ? Math.min(100, Math.round((pts / total) * 100)) : 0;
+          return (
+            <div className="flex items-center gap-6">
+              <div
+                className="relative grid size-20 place-items-center rounded-full"
+                style={{ background: `conic-gradient(#2563eb ${pct}%, #e2e8f0 0)` }}
+              >
+                <div className="grid size-14 place-items-center rounded-full bg-white text-sm font-bold text-slate-800">
+                  {pct}%
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-7 gap-y-2 text-sm">
+                <Legend color="bg-emerald-500" label="Hadir" value={String(hCount)} />
+                <Legend color="bg-amber-500" label="Terlambat" value={String(tCount)} />
+                <Legend color="bg-blue-500" label="Izin/Sakit" value={String(iCount + sdCount)} />
+                <Legend color="bg-red-500" label="Tidak hadir" value={String(aCount)} />
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   </div>;
@@ -590,6 +829,7 @@ function LeaveRequestForm({
   courses: CourseScheduleItem[];
 }) {
   const [courseCode, setCourseCode] = useState("");
+  const [meetingNumber, setMeetingNumber] = useState("");
   const [absenceDate, setAbsenceDate] = useState("");
   const [reason, setReason] = useState("");
   const [description, setDescription] = useState("");
@@ -604,20 +844,21 @@ function LeaveRequestForm({
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!courseCode || !absenceDate || !reason) {
-      setError("Lengkapi mata kuliah, tanggal ketidakhadiran, dan alasan sebelum mengirim pengajuan.");
+    if (!courseCode || !meetingNumber || !absenceDate || !reason) {
+      setError("Lengkapi mata kuliah, pertemuan, tanggal ketidakhadiran, dan alasan sebelum mengirim pengajuan.");
       setSent(false);
       return;
     }
     const chosen = courseOptions.find((c) => c.code === courseCode);
     setSubmitting(true);
     try {
+      const fullDescription = `[Pertemuan ${meetingNumber}] ${description.trim() || `Pengajuan ${reason}`}`;
       await onSubmit({
         courseCode,
         sectionId: chosen?.sectionId,
         absenceDate,
         reason: reason as LeaveReason,
-        description,
+        description: fullDescription,
         attachment: attachment || undefined,
       });
       setError("");
@@ -642,12 +883,27 @@ function LeaveRequestForm({
             <option value="">Pilih mata kuliah</option>
             {courseOptions.map((course) => <option key={course.code} value={course.code}>{course.code} — {course.name}{course.sectionName ? ` (${course.sectionName})` : ""}</option>)}
           </SelectField>
-          <Field label="Tanggal ketidakhadiran *" type="date" value={absenceDate} onChange={(value) => { setAbsenceDate(value); setSent(false); }} />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SelectField label="Pertemuan ke- *" value={meetingNumber} onChange={(value) => { setMeetingNumber(value); setSent(false); }}>
+              <option value="">Pilih pertemuan</option>
+              {Array.from({ length: 16 }, (_, i) => String(i + 1)).map((num) => (
+                <option key={num} value={num}>Pertemuan {num}</option>
+              ))}
+            </SelectField>
+            <div>
+              <Field label="Tanggal ketidakhadiran *" type="date" value={absenceDate} onChange={(value) => { setAbsenceDate(value); setSent(false); }} />
+              {absenceDate && (
+                <div className="mt-1.5 text-xs text-slate-500">
+                  Terpilih: <span className="font-medium text-slate-700">{formatAbsenceDate(absenceDate)}</span>
+                </div>
+              )}
+            </div>
+          </div>
           <SelectField label="Alasan *" value={reason} onChange={(value) => { setReason(value); setSent(false); }}>
             <option value="">Pilih alasan</option>
             <option value="Sakit">Sakit</option>
-            <option value="Izin Keperluan Lain">Izin Keperluan Lain</option>
-            <option value="Keperluan Keluarga">Keperluan Keluarga</option>
+            <option value="Izin">Izin (Keperluan Pribadi / Keluarga)</option>
+            <option value="Dispensasi">Dispensasi Kampus / Lomba</option>
           </SelectField>
           <TextareaField label="Keterangan tambahan" value={description} onChange={setDescription} placeholder="Jelaskan kondisi atau keperluan secara ringkas." />
           <label className="block">
@@ -672,8 +928,9 @@ function LeaveRequestForm({
   </div>;
 }
 
-function LeaveHistory({ requests, navigate, onSelect }: { requests: LeaveRequest[]; navigate: (s: Screen) => void; onSelect: (id: string | number) => void }) {
-  const studentRequests = requests.filter((request) => request.studentId === "2510511009");
+function LeaveHistory({ requests, navigate, onSelect, studentNumber }: { requests: LeaveRequest[]; navigate: (s: Screen) => void; onSelect: (id: string | number) => void; studentNumber?: string }) {
+  const targetNim = studentNumber || "2510511009";
+  const studentRequests = requests.filter((request) => request.studentId === targetNim);
   return <div>
     <Button variant="ghost" onClick={() => navigate("student-dashboard")} className="mb-5 !px-0"><Icon name="arrow" size={18} />Kembali ke beranda</Button>
     <PageHeading title="Riwayat pengajuan izin" description="Pantau status dan keputusan dosen untuk setiap pengajuan ketidakhadiran." action={<Button onClick={() => navigate("leave-form")}><Icon name="plus" size={18} />Ajukan Izin Baru</Button>} />
@@ -742,33 +999,162 @@ function Legend({ color, label, value }: { color: string; label: string; value: 
   return <div><div className="flex items-center gap-2 text-xs text-slate-500"><span className={`size-2 rounded-full ${color}`} />{label}</div><div className="ml-4 mt-0.5 font-bold">{value}</div></div>;
 }
 
-function SessionQR({ value, small = false }: { value: string; small?: boolean }) {
-  const [svgMarkup, setSvgMarkup] = useState("");
+function DynamicSessionQRBox({
+  session,
+  onTokenRotated,
+}: {
+  session: ActiveSessionInfo | null;
+  onTokenRotated?: (newToken: string, expiresAt: string) => void;
+}) {
+  const ROTATION_SECONDS = 60;
+  const [token, setToken] = useState(session?.qrTokenHash || "QR-DEMO");
+  const [secondsLeft, setSecondsLeft] = useState(ROTATION_SECONDS);
+  const [qrDataUrl, setQrDataUrl] = useState("");
+
+  useEffect(() => {
+    setToken(session?.qrTokenHash || "QR-DEMO");
+    setSecondsLeft(ROTATION_SECONDS);
+  }, [session?.id, session?.qrTokenHash]);
 
   useEffect(() => {
     let active = true;
-    QRCode.toString(value || "SMARTATTEND-DEMO", {
-      type: "svg",
-      margin: 1,
+    QRCode.toDataURL(token || "SMARTATTEND-DEMO", {
+      width: 512,
+      margin: 3,
       errorCorrectionLevel: "M",
       color: { dark: "#0f172a", light: "#ffffff" },
     })
-      .then((svg) => {
-        if (active) setSvgMarkup(svg);
+      .then((url) => {
+        if (active) setQrDataUrl(url);
       })
       .catch(() => {
-        if (active) setSvgMarkup("");
+        if (active) setQrDataUrl("");
       });
     return () => {
       active = false;
     };
-  }, [value]);
+  }, [token]);
+
+  useEffect(() => {
+    if (!session || session.status !== "open") return;
+
+    const timer = window.setInterval(() => {
+      setSecondsLeft((prev) => {
+        if (prev <= 1) {
+          rotateSessionQrToken(session.id, 75).then((res) => {
+            if (res) {
+              setToken(res.token);
+              onTokenRotated?.(res.token, res.expiresAt);
+            }
+          });
+          return ROTATION_SECONDS;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [session?.id, session?.status]);
+
+  const pct = Math.max(0, Math.min(100, (secondsLeft / ROTATION_SECONDS) * 100));
+
+  const handleDownloadQrImage = () => {
+    if (!qrDataUrl) return;
+    const link = document.createElement("a");
+    link.href = qrDataUrl;
+    link.download = `QR-Presensi-${token}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  return (
+    <div className="flex flex-col items-center">
+      <div className="mx-auto w-fit">
+        <SessionQR value={token} dataUrl={qrDataUrl} />
+      </div>
+      <div className="mt-3 inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-1.5 font-mono text-sm font-bold text-blue-700">
+        <span>{token}</span>
+        {session && (
+          <span className="rounded bg-blue-600 px-1.5 py-0.5 font-sans text-[11px] font-semibold text-white">
+            {secondsLeft}d
+          </span>
+        )}
+      </div>
+      {session && (
+        <div className="mt-2.5 w-full max-w-[12rem]">
+          <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
+            <div
+              className="h-full rounded-full bg-blue-600 transition-all duration-700"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <div className="mt-1 text-[11px] text-slate-400">
+            QR otomatis diperbarui tiap 60 detik
+          </div>
+          <button
+            type="button"
+            onClick={handleDownloadQrImage}
+            className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            <Icon name="qr" size={14} />
+            Unduh Gambar QR (PNG)
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SessionQR({
+  value,
+  small = false,
+  dataUrl,
+}: {
+  value: string;
+  small?: boolean;
+  dataUrl?: string;
+}) {
+  const [generatedUrl, setGeneratedUrl] = useState("");
+
+  useEffect(() => {
+    if (dataUrl) return;
+    let active = true;
+    QRCode.toDataURL(value || "SMARTATTEND-DEMO", {
+      width: 512,
+      margin: 3,
+      errorCorrectionLevel: "M",
+      color: { dark: "#0f172a", light: "#ffffff" },
+    })
+      .then((url) => {
+        if (active) setGeneratedUrl(url);
+      })
+      .catch(() => {
+        if (active) setGeneratedUrl("");
+      });
+    return () => {
+      active = false;
+    };
+  }, [value, dataUrl]);
+
+  const src = dataUrl || generatedUrl;
 
   return (
     <div
-      className={`overflow-hidden rounded-xl border border-slate-100 bg-white p-2.5 shadow-sm [&>svg]:h-full [&>svg]:w-full ${small ? "size-36" : "size-52"}`}
-      dangerouslySetInnerHTML={{ __html: svgMarkup }}
-    />
+      className={`overflow-hidden rounded-xl border border-slate-200 bg-white p-2 shadow-sm ${small ? "size-36" : "size-48"}`}
+    >
+      {src ? (
+        <img
+          src={src}
+          alt={`QR Code ${value}`}
+          className="h-full w-full object-contain"
+        />
+      ) : (
+        <div className="grid h-full w-full place-items-center text-xs text-slate-400">
+          Memuat QR...
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -833,7 +1219,10 @@ function Scanner({
             id,
             section_id,
             title,
+            starts_at,
+            ends_at,
             qr_token_hash,
+            qr_expires_at,
             status,
             class_sections (
               section_name,
@@ -852,6 +1241,14 @@ function Scanner({
           return;
         }
 
+        if (matchedSession.qr_expires_at) {
+          const expMs = new Date(matchedSession.qr_expires_at).getTime();
+          if (!Number.isNaN(expMs) && Date.now() > expMs) {
+            setState("expired");
+            return;
+          }
+        }
+
         const sec = Array.isArray(matchedSession.class_sections)
           ? matchedSession.class_sections[0]
           : matchedSession.class_sections;
@@ -868,11 +1265,19 @@ function Scanner({
           courseName: crs?.course_name || activeSession?.courseName || "Mata Kuliah",
           sectionName: sec?.section_name || activeSession?.sectionName || "Kelas A",
           title: matchedSession.title,
+          startsAt: matchedSession.starts_at,
+          endsAt: matchedSession.ends_at,
           qrTokenHash: matchedSession.qr_token_hash,
+          qrExpiresAt: matchedSession.qr_expires_at,
+          status: matchedSession.status,
         };
 
-        const res = await submitStudentCheckIn({ sessionId: targetSession.id, studentId: profile.id });
-        setTimeLabel(res.timeLabel);
+        const res = await submitStudentCheckIn({
+          sessionId: targetSession.id,
+          studentId: profile.id,
+          startsAt: matchedSession.starts_at,
+        });
+        setTimeLabel(`${res.timeLabel} (${res.attendanceLabel})`);
         if (res.status === "duplicate") {
           setState("duplicate");
         } else {
@@ -903,12 +1308,22 @@ function Scanner({
     scanLockRef.current = false;
     try {
       await stopCamera();
-      const html5Qr = new Html5Qrcode("smartattend-qr-reader");
+      const html5Qr = new Html5Qrcode("smartattend-qr-reader", {
+        verbose: false,
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+      });
       qrScannerRef.current = html5Qr;
       setCameraActive(true);
       await html5Qr.start(
         { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 220, height: 220 } },
+        {
+          fps: 12,
+          qrbox: (viewfinderWidth, viewfinderHeight) => {
+            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+            const boxSize = Math.max(180, Math.floor(minEdge * 0.72));
+            return { width: boxSize, height: boxSize };
+          },
+        },
         async (decodedText) => {
           if (scanLockRef.current) return;
           scanLockRef.current = true;
@@ -934,12 +1349,17 @@ function Scanner({
     setCameraError("");
     try {
       await stopCamera();
-      const html5Qr = new Html5Qrcode("smartattend-qr-file-reader");
-      const decodedText = await html5Qr.scanFile(file, true);
+      const html5Qr = new Html5Qrcode("smartattend-qr-file-reader", {
+        verbose: false,
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+      });
+      const decodedText = await html5Qr.scanFile(file, false);
       html5Qr.clear();
       await verifyScannedToken(decodedText);
     } catch {
-      setState("invalid");
+      setCameraError(
+        "Kode QR tidak terdeteksi pada gambar tersebut. Pastikan gambar QR jelas, tidak terpotong, atau gunakan tombol Unduh Gambar QR dari layar dosen."
+      );
     }
   };
 
@@ -1046,7 +1466,7 @@ function Scanner({
               Sesi aktif terdeteksi: {activeSession.courseCode}
             </div>
             <div className="mt-1 font-semibold">{activeSession.courseName} ({activeSession.sectionName})</div>
-            <div className="mt-0.5 text-emerald-700">{activeSession.title} • Token: {activeSession.qrTokenHash}</div>
+            <div className="mt-0.5 text-emerald-700">{activeSession.title} • Silakan pindai QR yang ditampilkan dosen</div>
           </div>
         )}
         {state !== "ready" && <ScanResult data={messages[state]} onAgain={() => { setState("ready"); scanLockRef.current = false; }} onHome={() => navigate("student-dashboard")} />}
@@ -1109,7 +1529,7 @@ function AttendanceHistory({ history }: { history: typeof initialHistory }) {
   </div>;
 }
 
-function LecturerDashboard({ navigate, leaveRequests, sections, profile }: { navigate: (s: Screen) => void; leaveRequests: LeaveRequest[]; sections: CourseScheduleItem[]; profile: UserProfile | null; onRefreshSections?: () => Promise<void> }) {
+function LecturerDashboard({ navigate, leaveRequests, sections, profile, activeSession }: { navigate: (s: Screen) => void; leaveRequests: LeaveRequest[]; sections: CourseScheduleItem[]; profile: UserProfile | null; activeSession?: ActiveSessionInfo | null; onRefreshSections?: () => Promise<void> }) {
   const [selectedDay, setSelectedDay] = useState<string>("Semua");
   const rawClasses = sections.length > 0
     ? sections.map((item) => ({
@@ -1159,7 +1579,7 @@ function LecturerDashboard({ navigate, leaveRequests, sections, profile }: { nav
       {displayClasses.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">Tidak ada jadwal mengampu pada hari {selectedDay}.</div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-3">{displayClasses.map((c, i) => <ClassCard key={`${c.code}-${i}`} course={c} active={i === 0} onLive={() => navigate("live")} onCreate={() => navigate("create-session")} />)}</div>
+        <div className="grid gap-4 lg:grid-cols-3">{displayClasses.map((c, i) => <ClassCard key={`${c.code}-${i}`} course={c} active={Boolean(activeSession && ((c as any).sectionId ? activeSession.sectionId === (c as any).sectionId : activeSession.courseCode === c.code))} onLive={() => navigate("live")} onCreate={() => navigate("create-session")} />)}</div>
       )}
     </section>
     <section className="mt-7 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -1257,9 +1677,16 @@ function CreateSession({
   sections: CourseScheduleItem[];
 }) {
   const [selectedSectionId, setSelectedSectionId] = useState(sections[0]?.sectionId || "");
-  const [meeting, setMeeting] = useState("12");
-  const [start, setStart] = useState("08:00");
-  const [end, setEnd] = useState("09:40");
+  const [meeting, setMeeting] = useState("1");
+  const [sessionDate, setSessionDate] = useState(() => new Date().toLocaleDateString("en-CA"));
+  const [start, setStart] = useState(() => {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  });
+  const [end, setEnd] = useState(() => {
+    const later = new Date(Date.now() + 100 * 60 * 1000);
+    return `${String(later.getHours()).padStart(2, "0")}:${String(later.getMinutes()).padStart(2, "0")}`;
+  });
   const [generated, setGenerated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -1280,6 +1707,10 @@ function CreateSession({
       setError("Belum ada kelas yang tersedia untuk dosen ini.");
       return;
     }
+    if (!sessionDate) {
+      setError("Pilih tanggal pertemuan terlebih dahulu.");
+      return;
+    }
     setLoading(true);
     try {
       const session = await createAttendanceSession({
@@ -1287,6 +1718,7 @@ function CreateSession({
         meetingNumber: meeting,
         startTime: start,
         endTime: end,
+        sessionDate,
       });
       setCreatedSession(session);
       setGenerated(true);
@@ -1303,10 +1735,10 @@ function CreateSession({
     <PageHeading title="Buat sesi presensi" description="Atur detail pertemuan dan buat kode QR untuk mahasiswa." />
     <div className="grid gap-6 lg:grid-cols-[1fr_25rem]">
       <form onSubmit={generate} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
-        <div className="mb-6 flex items-center gap-3 border-b border-slate-100 pb-5"><div className="grid size-10 place-items-center rounded-xl bg-blue-50 text-blue-600"><Icon name="calendar" size={20} /></div><div><div className="font-bold">Detail sesi</div><div className="text-xs text-slate-400">Pastikan informasi kelas sudah sesuai</div></div></div>
+        <div className="mb-6 flex items-center gap-3 border-b border-slate-100 pb-5"><div className="grid size-10 place-items-center rounded-xl bg-blue-50 text-blue-600"><Icon name="calendar" size={20} /></div><div><div className="font-bold">Detail sesi</div><div className="text-xs text-slate-400">Kolom bertanda wajib harus dilengkapi</div></div></div>
         <div className="space-y-5">
           {error && <Feedback tone="error">{error}</Feedback>}
-          <SelectField label="Mata kuliah & Kelas" value={currentSection?.sectionId || ""} onChange={setSelectedSectionId}>
+          <SelectField label="Mata kuliah & Kelas *" value={currentSection?.sectionId || ""} onChange={setSelectedSectionId}>
             {sections.length > 0 ? (
               sections.map((sec) => (
                 <option key={sec.sectionId} value={sec.sectionId}>
@@ -1317,9 +1749,20 @@ function CreateSession({
               <option value="">Memuat daftar kelas...</option>
             )}
           </SelectField>
-          <div className="grid gap-5 sm:grid-cols-2">
-            <Field label="Pertemuan ke-" value={meeting} onChange={setMeeting} />
-            <Field label="Kelas" value={currentSection?.sectionName || "Kelas A"} onChange={() => {}} />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SelectField label="Pertemuan ke- *" value={meeting} onChange={setMeeting}>
+              {Array.from({ length: 16 }, (_, i) => String(i + 1)).map((num) => (
+                <option key={num} value={num}>Pertemuan {num}</option>
+              ))}
+            </SelectField>
+            <div>
+              <Field label="Tanggal pertemuan *" type="date" value={sessionDate} onChange={setSessionDate} />
+              {sessionDate && (
+                <div className="mt-1.5 text-xs text-slate-500">
+                  Terpilih: <span className="font-medium text-slate-700">{formatAbsenceDate(sessionDate)}</span>
+                </div>
+              )}
+            </div>
           </div>
           <div className="grid gap-5 sm:grid-cols-2"><Field label="Waktu mulai" type="time" value={start} onChange={setStart} /><Field label="Waktu selesai" type="time" value={end} onChange={setEnd} /></div>
           <div className="rounded-xl bg-slate-50 p-4"><label className="flex items-start gap-3"><input type="checkbox" defaultChecked className="mt-0.5 size-4 accent-blue-600" /><span><span className="block text-sm font-semibold text-slate-700">Validasi waktu otomatis</span><span className="mt-1 block text-xs leading-5 text-slate-500">QR akan kedaluwarsa setelah waktu selesai dan presensi ganda akan ditolak.</span></span></label></div>
@@ -1327,7 +1770,7 @@ function CreateSession({
         </div>
       </form>
       <aside className={`rounded-2xl p-6 text-center transition-all ${generated ? "border border-blue-200 bg-blue-50" : "border border-dashed border-slate-300 bg-white"}`}>
-        {generated && createdSession ? <><div className="mx-auto flex w-fit items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700"><span className="size-2 animate-pulse rounded-full bg-emerald-500" />Sesi aktif</div><div className="mx-auto mt-5 w-fit"><SessionQR value={createdSession.qrTokenHash} small /></div><div className="mt-3 inline-block rounded-lg bg-white px-3 py-1 font-mono text-xs font-bold text-blue-700 shadow-sm">Token: {createdSession.qrTokenHash}</div><div className="mt-4 font-bold">{createdSession.courseName}</div><div className="mt-1 text-xs text-slate-500">{createdSession.title} • {createdSession.sectionName}</div><div className="mt-4 flex items-center justify-center gap-2 text-sm font-semibold text-blue-700"><Icon name="clock" size={17} />{start} – {end} WIB</div><Button onClick={() => navigate("live")} className="mt-6 w-full">Pantau Presensi Live <Icon name="chevron" size={17} /></Button></> : <div className="flex min-h-80 flex-col items-center justify-center"><div className="grid size-16 place-items-center rounded-2xl bg-slate-100 text-slate-400"><Icon name="qr" size={30} /></div><div className="mt-5 font-bold text-slate-700">QR belum dibuat</div><p className="mt-2 max-w-xs text-xs leading-5 text-slate-400">Lengkapi detail sesi, lalu tekan tombol buat untuk menghasilkan kode QR.</p></div>}
+        {generated && createdSession ? <><div className="mx-auto flex w-fit items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700"><span className="size-2 animate-pulse rounded-full bg-emerald-500" />Sesi aktif</div><div className="mt-5"><DynamicSessionQRBox session={createdSession} onTokenRotated={(t, exp) => { const updated = { ...createdSession, qrTokenHash: t, qrExpiresAt: exp }; setCreatedSession(updated); onCreate(updated); }} /></div><div className="mt-4 font-bold">{createdSession.courseName}</div><div className="mt-1 text-xs text-slate-500">{createdSession.title} • {createdSession.sectionName}</div><div className="mt-4 flex items-center justify-center gap-2 text-sm font-semibold text-blue-700"><Icon name="clock" size={17} />{start} – {end} WIB</div><Button onClick={() => navigate("live")} className="mt-6 w-full">Pantau Presensi Live <Icon name="chevron" size={17} /></Button></> : <div className="flex min-h-80 flex-col items-center justify-center"><div className="grid size-16 place-items-center rounded-2xl bg-slate-100 text-slate-400"><Icon name="qr" size={30} /></div><div className="mt-5 font-bold text-slate-700">QR belum dibuat</div><p className="mt-2 max-w-xs text-xs leading-5 text-slate-400">Lengkapi detail sesi, lalu tekan tombol buat untuk menghasilkan kode QR.</p></div>}
       </aside>
     </div>
   </div>;
@@ -1355,8 +1798,19 @@ function LiveAttendance({
       setDbAttendees([]);
       return;
     }
-    fetchSessionAttendees(activeSession.id).then(setDbAttendees);
-  }, [activeSession]);
+    let active = true;
+    const loadAttendees = () => {
+      fetchSessionAttendees(activeSession.id).then((rows) => {
+        if (active) setDbAttendees(rows);
+      });
+    };
+    loadAttendees();
+    const interval = window.setInterval(loadAttendees, 3000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [activeSession?.id]);
 
   const sourceList = activeSession
     ? dbAttendees.map((a) => ({
@@ -1374,14 +1828,45 @@ function LiveAttendance({
     [query, sourceList]
   );
 
-  const sessionTitle = activeSession ? `Presensi ${activeSession.courseName}` : "Presensi Pemrograman Berorientasi Objek";
-  const sessionDesc = activeSession
-    ? `${activeSession.courseCode} • ${activeSession.title} • ${activeSession.sectionName}`
-    : "IF2140 • Pertemuan 12 • Senin, 20 Mei 2024";
+  if (!activeSession) {
+    return (
+      <div>
+        <Button variant="ghost" onClick={() => navigate("lecturer-dashboard")} className="mb-5 !px-0">
+          <Icon name="arrow" size={18} />
+          Kembali ke beranda
+        </Button>
+        <PageHeading
+          title="Presensi Live"
+          description="Pantau kehadiran mahasiswa secara real-time saat sesi perkuliahan berlangsung."
+        />
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-14 text-center shadow-sm">
+          <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-blue-50 text-blue-600">
+            <Icon name="live" size={26} />
+          </div>
+          <div className="mt-4 text-base font-bold text-slate-900">Belum ada sesi presensi aktif</div>
+          <p className="mx-auto mt-1.5 max-w-md text-sm text-slate-500">
+            Buat sesi presensi terlebih dahulu untuk menampilkan kode QR dinamis dan daftar kehadiran mahasiswa secara langsung.
+          </p>
+          <div className="mt-6 flex flex-wrap justify-center gap-2.5">
+            <Button onClick={() => navigate("create-session")}>
+              <Icon name="plus" size={17} />
+              Buat Sesi Presensi
+            </Button>
+            <Button variant="secondary" onClick={() => navigate("lecturer-dashboard")}>
+              Ke Beranda Dosen
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const sessionTitle = `Presensi ${activeSession.courseName}`;
+  const sessionDesc = `${activeSession.courseCode} • ${activeSession.title} • ${activeSession.sectionName}`;
 
   return <div>
     <Button variant="ghost" onClick={() => navigate("lecturer-dashboard")} className="mb-5 !px-0"><Icon name="arrow" size={18} />Kembali ke beranda</Button>
-    <PageHeading title={sessionTitle} description={sessionDesc} action={<div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700"><span className="size-2 animate-pulse rounded-full bg-emerald-500" />{activeSession || sessionCreated ? "Sesi aktif" : "Sesi demo aktif"}</div>} />
+    <PageHeading title={sessionTitle} description={sessionDesc} action={<div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700"><span className="size-2 animate-pulse rounded-full bg-emerald-500" />Sesi aktif</div>} />
     <div className="mb-6 flex w-fit rounded-xl bg-slate-100 p-1"><Button variant="ghost" onClick={() => setTab("live")} className={tab === "live" ? "!bg-white !text-blue-700 shadow-sm" : ""}><Icon name="live" size={17} />Daftar Live</Button><Button variant="ghost" onClick={() => setTab("recap")} className={tab === "recap" ? "!bg-white !text-blue-700 shadow-sm" : ""}><Icon name="history" size={17} />Rekap Presensi</Button></div>
     {tab === "live" ? <div className="grid gap-6 xl:grid-cols-[1fr_19rem]">
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -1394,33 +1879,429 @@ function LiveAttendance({
       </section>
       <aside className="space-y-4">
         <div className="rounded-2xl bg-blue-600 p-5 text-white"><div className="text-sm text-blue-100">Kehadiran saat ini</div><div className="mt-2 text-4xl font-bold">{activeSession ? dbAttendees.length : 34}<span className="text-xl text-blue-200">/{activeSession ? 1 : 38}</span></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-blue-500"><div className="h-full w-full rounded-full bg-white" /></div><div className="mt-2 text-xs text-blue-100">{activeSession ? "Tersinkronisasi dengan database" : "89% mahasiswa telah hadir"}</div></div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5"><div className="font-bold">Kode QR sesi</div><div className="mx-auto mt-4 w-fit"><SessionQR value={activeSession?.qrTokenHash || "QR-DEMO"} small /></div><div className="mt-3 text-center font-mono text-xs font-semibold text-slate-600">{activeSession?.qrTokenHash || "QR-DEMO"}</div></div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-5"><div className="mb-3 font-bold">Kode QR dinamis</div><DynamicSessionQRBox session={activeSession} /></div>
         <Button variant="danger" onClick={onCloseSession} className="w-full"><Icon name="x" size={17} />Akhiri sesi</Button>
       </aside>
-    </div> : <Recap leaveRequests={leaveRequests} />}
+    </div> : <Recap leaveRequests={leaveRequests} activeSession={activeSession} dbAttendees={dbAttendees} />}
   </div>;
 }
 
-function Recap({ leaveRequests }: { leaveRequests: LeaveRequest[] }) {
-  const approvedSick = leaveRequests.filter((request) => request.status === "Disetujui" && request.reason === "Sakit").length;
-  const approvedLeave = leaveRequests.filter((request) => request.status === "Disetujui" && request.reason !== "Sakit").length;
-  const recap = [
-    { label: "Hadir", value: 34, pct: "89%", color: "bg-emerald-500", box: "bg-emerald-50 text-emerald-700" },
-    { label: "Terlambat", value: 3, pct: "8%", color: "bg-amber-500", box: "bg-amber-50 text-amber-700" },
-    { label: "Tidak hadir", value: 1, pct: "3%", color: "bg-red-500", box: "bg-red-50 text-red-700" },
+function Recap({
+  leaveRequests,
+  activeSession,
+  dbAttendees,
+}: {
+  leaveRequests: LeaveRequest[];
+  activeSession: ActiveSessionInfo | null;
+  dbAttendees: LiveAttendeeItem[];
+}) {
+  const sessionDateStr =
+    activeSession?.sessionDate ||
+    (activeSession?.startTime ? new Date(activeSession.startTime).toLocaleDateString("en-CA") : "");
+
+  const seenStudentLeaves = new Set<string>();
+  const verifiedLeaves = leaveRequests.filter((request) => {
+    if (request.status !== "Disetujui") return false;
+    if (!activeSession) return true;
+    const sameCourse = request.code.trim().toUpperCase() === activeSession.courseCode.trim().toUpperCase();
+    const sameDate = !sessionDateStr || String(request.absenceDate).slice(0, 10) === sessionDateStr;
+    if (!sameCourse || !sameDate) return false;
+    // Jangan hitung izin jika mahasiswa sudah tercatat Hadir/Terlambat/Izin/Sakit di attendance_records sesi ini
+    if (dbAttendees.some((a) => a.studentNumber === request.studentId)) return false;
+    // Deduplikasi per mahasiswa agar 1 mahasiswa maksimal terhitung 1 kali pada sesi ini
+    if (seenStudentLeaves.has(request.studentId)) return false;
+    seenStudentLeaves.add(request.studentId);
+    return true;
+  });
+
+  const dbSickCount = activeSession ? dbAttendees.filter((a) => a.status === "Sakit").length : 0;
+  const dbLeaveCount = activeSession ? dbAttendees.filter((a) => a.status === "Izin" || a.status === "Dispensasi").length : 0;
+  const extraLeaves = verifiedLeaves;
+
+  const approvedSick = dbSickCount + extraLeaves.filter((request) => request.reason === "Sakit").length;
+  const approvedLeave = dbLeaveCount + extraLeaves.filter((request) => request.reason !== "Sakit").length;
+
+  const presentCount = activeSession
+    ? dbAttendees.filter((a) => a.status === "Hadir").length
+    : 34;
+  const lateCount = activeSession
+    ? dbAttendees.filter((a) => a.status === "Terlambat").length
+    : 3;
+  const absentCount = activeSession ? 0 : 1;
+  const totalCount = Math.max(1, presentCount + lateCount + approvedLeave + approvedSick + absentCount);
+
+  const toPct = (val: number) => `${Math.round((val / totalCount) * 100)}%`;
+
+  const topCards = [
+    { label: "Hadir", value: presentCount, pct: toPct(presentCount), color: "bg-emerald-500", box: "bg-emerald-50 text-emerald-700", icon: "check" as IconName },
+    { label: "Terlambat", value: lateCount, pct: toPct(lateCount), color: "bg-amber-500", box: "bg-amber-50 text-amber-700", icon: "clock" as IconName },
+    { label: "Tidak hadir", value: absentCount, pct: toPct(absentCount), color: "bg-red-500", box: "bg-red-50 text-red-700", icon: "x" as IconName },
   ];
+
+  const recap = [
+    { label: "Hadir", value: presentCount, pct: toPct(presentCount), color: "bg-emerald-500" },
+    { label: "Terlambat", value: lateCount, pct: toPct(lateCount), color: "bg-amber-500" },
+    { label: "Izin", value: approvedLeave, pct: toPct(approvedLeave), color: "bg-blue-500" },
+    { label: "Sakit", value: approvedSick, pct: toPct(approvedSick), color: "bg-violet-500" },
+    { label: "Tidak hadir", value: absentCount, pct: toPct(absentCount), color: "bg-red-500" },
+  ];
+
+  const handleDownloadCsv = () => {
+    const combinedRows = activeSession
+      ? [
+          ...dbAttendees.map((a) => [
+            a.studentNumber,
+            a.name,
+            activeSession.courseCode,
+            activeSession.courseName,
+            activeSession.title,
+            a.time,
+            a.status,
+          ]),
+          ...verifiedLeaves
+            .filter((lv) => !dbAttendees.some((a) => a.studentNumber === lv.studentId))
+            .map((lv) => [
+              lv.studentId,
+              lv.student,
+              activeSession.courseCode,
+              activeSession.courseName,
+              activeSession.title,
+              "-",
+              lv.reason === "Sakit" ? "Sakit" : "Izin",
+            ]),
+        ]
+      : attendeeSeed.map((a) => [
+          a.id,
+          a.name,
+          "IF2140",
+          "Pemrograman Berorientasi Objek",
+          "Pertemuan 12",
+          a.time,
+          a.status,
+        ]);
+
+    const rows = combinedRows.map((cols, idx) => [String(idx + 1), ...cols]);
+    const header = ["No", "NIM", "Nama Mahasiswa", "Kode MK", "Mata Kuliah", "Sesi", "Waktu Check-In (WIB)", "Status"];
+    const csvLines = [
+      "sep=,",
+      ...[header, ...rows].map((cols) =>
+        cols.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(",")
+      ),
+    ];
+    const blob = new Blob(["\uFEFF" + csvLines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const slug = (activeSession?.courseCode || "IF2140").toLowerCase();
+    link.href = url;
+    link.download = `rekap-presensi-${slug}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const sessionWindowLabel = activeSession
+    ? `${new Date(activeSession.startsAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} – ${new Date(activeSession.endsAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} WIB`
+    : "08.00 – 09.40 WIB";
+  const firstCheckInLabel = activeSession
+    ? dbAttendees.length > 0
+      ? `${dbAttendees[0].time} • ${dbAttendees[0].name}`
+      : "Belum ada scan"
+    : "07.54 • Nadia Putri";
+
   return <div className="space-y-6">
-    <div className="grid gap-4 sm:grid-cols-3">{recap.map((x) => <div key={x.label} className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-center justify-between"><div className={`grid size-10 place-items-center rounded-xl ${x.box}`}><Icon name={x.label === "Hadir" ? "check" : x.label === "Terlambat" ? "clock" : "x"} size={19} /></div><span className="text-sm font-bold text-slate-400">{x.pct}</span></div><div className="mt-4 text-3xl font-bold">{x.value}</div><div className="mt-1 text-sm text-slate-500">{x.label}</div></div>)}</div>
+    <div className="grid gap-4 sm:grid-cols-3">{topCards.map((x) => <div key={x.label} className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-center justify-between"><div className={`grid size-10 place-items-center rounded-xl ${x.box}`}><Icon name={x.icon} size={19} /></div><span className="text-sm font-bold text-slate-400">{x.pct}</span></div><div className="mt-4 text-3xl font-bold">{x.value}</div><div className="mt-1 text-sm text-slate-500">{x.label}</div></div>)}</div>
     <section className="rounded-2xl border border-slate-200 bg-white p-6">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-lg font-bold">Izin dan sakit terverifikasi</div><p className="mt-1 text-sm text-slate-500">Berasal dari pengajuan yang telah disetujui dosen.</p></div><div className="flex gap-3"><div className="rounded-xl bg-blue-50 px-4 py-3 text-center"><div className="text-xl font-bold text-blue-700">{approvedLeave}</div><div className="text-xs text-blue-600">Izin</div></div><div className="rounded-xl bg-violet-50 px-4 py-3 text-center"><div className="text-xl font-bold text-violet-700">{approvedSick}</div><div className="text-xs text-violet-600">Sakit</div></div></div></div>
-      <div className="mt-5 divide-y divide-slate-100 border-t border-slate-100">{leaveRequests.filter((request) => request.status === "Disetujui").map((request) => <div key={request.id} className="grid gap-3 py-4 sm:grid-cols-[1.2fr_1fr_auto] sm:items-center"><div><div className="text-sm font-semibold">{request.student}</div><div className="text-xs text-slate-400">{request.studentId} • {request.course}</div></div><div className="text-sm text-slate-600">{formatAbsenceDate(request.absenceDate)}</div><StatusPill status={request.reason === "Sakit" ? "Sakit" : "Izin"} /></div>)}</div>
+      <div className="mt-5 divide-y divide-slate-100 border-t border-slate-100">{verifiedLeaves.length === 0 ? <div className="py-4 text-sm text-slate-400">Belum ada izin atau sakit terverifikasi untuk mata kuliah ini.</div> : verifiedLeaves.map((request) => <div key={request.id} className="grid gap-3 py-4 sm:grid-cols-[1.2fr_1fr_auto] sm:items-center"><div><div className="text-sm font-semibold">{request.student}</div><div className="text-xs text-slate-400">{request.studentId} • {request.course}</div></div><div className="text-sm text-slate-600">{formatAbsenceDate(request.absenceDate)}</div><StatusPill status={request.reason === "Sakit" ? "Sakit" : "Izin"} /></div>)}</div>
     </section>
     <section className="rounded-2xl border border-slate-200 bg-white p-6">
-      <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center"><div><div className="text-lg font-bold">Ringkasan sesi</div><p className="mt-1 text-sm text-slate-500">Distribusi status kehadiran pertemuan 12</p></div><Button variant="secondary">Unduh rekap CSV</Button></div>
+      <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center"><div><div className="text-lg font-bold">Ringkasan sesi</div><p className="mt-1 text-sm text-slate-500">Distribusi status kehadiran {activeSession ? activeSession.title : "pertemuan 12"}</p></div><Button variant="secondary" onClick={handleDownloadCsv}>Unduh rekap CSV</Button></div>
       <div className="mt-8 space-y-5">{recap.map((x) => <div key={x.label}><div className="mb-2 flex justify-between text-sm"><span className="font-medium text-slate-600">{x.label}</span><span className="font-bold">{x.value} mahasiswa</span></div><div className="h-2.5 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${x.color}`} style={{ width: x.pct }} /></div></div>)}</div>
-      <div className="mt-8 grid gap-4 border-t border-slate-100 pt-6 sm:grid-cols-3"><div><div className="text-xs text-slate-400">Waktu sesi</div><div className="mt-1 text-sm font-semibold">08.00 – 09.40 WIB</div></div><div><div className="text-xs text-slate-400">Kehadiran pertama</div><div className="mt-1 text-sm font-semibold">07.54 • Nadia Putri</div></div><div><div className="text-xs text-slate-400">Rata-rata waktu scan</div><div className="mt-1 text-sm font-semibold">8,4 detik</div></div></div>
+      <div className="mt-8 grid gap-4 border-t border-slate-100 pt-6 sm:grid-cols-3"><div><div className="text-xs text-slate-400">Waktu sesi</div><div className="mt-1 text-sm font-semibold">{sessionWindowLabel}</div></div><div><div className="text-xs text-slate-400">Kehadiran pertama</div><div className="mt-1 text-sm font-semibold">{firstCheckInLabel}</div></div><div><div className="text-xs text-slate-400">Sumber data</div><div className="mt-1 text-sm font-semibold">{activeSession ? "Supabase Real-Time" : "Mode Simulasi"}</div></div></div>
     </section>
   </div>;
+}
+
+
+function SemesterRecap({
+  navigate,
+  sections,
+}: {
+  navigate: (s: Screen) => void;
+  sections: CourseScheduleItem[];
+}) {
+  const [selectedSectionId, setSelectedSectionId] = useState(sections[0]?.sectionId || "");
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [completedMeetings, setCompletedMeetings] = useState<number[]>([]);
+  const [rows, setRows] = useState<SemesterStudentRow[]>([]);
+
+  useEffect(() => {
+    if (!selectedSectionId && sections.length > 0) {
+      setSelectedSectionId(sections[0].sectionId);
+    }
+  }, [sections, selectedSectionId]);
+
+  useEffect(() => {
+    let active = true;
+    if (!selectedSectionId) return;
+    setLoading(true);
+    fetchSemesterRecapMatrix(selectedSectionId)
+      .then((res) => {
+        if (!active) return;
+        setCompletedMeetings(res.completedMeetings);
+        setRows(res.rows);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [selectedSectionId]);
+
+  const currentSection = sections.find((s) => s.sectionId === selectedSectionId) || sections[0];
+  const filteredRows = useMemo(
+    () =>
+      rows.filter(
+        (r) =>
+          r.name.toLowerCase().includes(search.toLowerCase()) ||
+          r.studentNumber.toLowerCase().includes(search.toLowerCase())
+      ),
+    [rows, search]
+  );
+
+  const totals = useMemo(() => {
+    return rows.reduce(
+      (acc, r) => {
+        acc.hadir += r.hadir;
+        acc.terlambat += r.terlambat;
+        acc.izin += r.izin;
+        acc.sakit += r.sakit;
+        acc.dispensasi += r.dispensasi;
+        acc.alpha += r.alpha;
+        return acc;
+      },
+      { hadir: 0, terlambat: 0, izin: 0, sakit: 0, dispensasi: 0, alpha: 0 }
+    );
+  }, [rows]);
+
+  const avgAttendance = useMemo(() => {
+    if (rows.length === 0) return 0;
+    return Math.round(rows.reduce((sum, r) => sum + r.percentage, 0) / rows.length);
+  }, [rows]);
+
+  const badgeStyle: Record<string, string> = {
+    H: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    T: "bg-amber-50 text-amber-700 border-amber-200",
+    I: "bg-blue-50 text-blue-700 border-blue-200",
+    S: "bg-violet-50 text-violet-700 border-violet-200",
+    D: "bg-cyan-50 text-cyan-700 border-cyan-200",
+    A: "bg-red-50 text-red-700 border-red-200",
+    "-": "bg-slate-50 text-slate-300 border-slate-100",
+  };
+
+  const handleExportAllMeetingsCsv = () => {
+    const meetingHeaders = Array.from({ length: 16 }, (_, i) => `P${i + 1}`);
+    const header = [
+      "No",
+      "NIM",
+      "Nama Mahasiswa",
+      "Kode MK",
+      "Mata Kuliah",
+      "Kelas",
+      ...meetingHeaders,
+      "Hadir",
+      "Terlambat",
+      "Izin",
+      "Sakit",
+      "Dispensasi",
+      "Alpha",
+      "Total Poin",
+      "Kehadiran (%)",
+    ];
+
+    const csvRows = filteredRows.map((r, idx) => [
+      String(idx + 1),
+      r.studentNumber,
+      r.name,
+      currentSection?.code || "-",
+      currentSection?.name || "-",
+      currentSection?.sectionName || "-",
+      ...Array.from({ length: 16 }, (_, i) => r.meetings[i + 1] || "-"),
+      String(r.hadir),
+      String(r.terlambat),
+      String(r.izin),
+      String(r.sakit),
+      String(r.dispensasi),
+      String(r.alpha),
+      String(r.points),
+      `${r.percentage}%`,
+    ]);
+
+    const csvLines = [
+      "sep=,",
+      ...[header, ...csvRows].map((cols) =>
+        cols.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(",")
+      ),
+    ];
+
+    const blob = new Blob(["\uFEFF" + csvLines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const slug = (currentSection?.code || "rekap").toLowerCase();
+    link.href = url;
+    link.download = `rekap-semester-p1-p16-${slug}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div>
+      <Button variant="ghost" onClick={() => navigate("lecturer-dashboard")} className="mb-5 !px-0">
+        <Icon name="arrow" size={18} />
+        Kembali ke beranda
+      </Button>
+      <PageHeading
+        title="Rekap Presensi Semester (Pertemuan 1–16)"
+        description="Akumulasi kehadiran, keterlambatan, izin, sakit, dispensasi, dan alpha seluruh pertemuan."
+        action={
+          <Button onClick={handleExportAllMeetingsCsv} disabled={filteredRows.length === 0}>
+            Unduh Rekap P1–P16 (CSV)
+          </Button>
+        }
+      />
+
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          icon="calendar"
+          label="Pertemuan terlaksana"
+          value={`${completedMeetings.length} / 16`}
+          detail={completedMeetings.length > 0 ? `Terakhir: Pertemuan ${completedMeetings[completedMeetings.length - 1]}` : "Belum ada sesi"}
+          tone="blue"
+        />
+        <StatCard
+          icon="check"
+          label="Total Hadir & Terlambat"
+          value={String(totals.hadir + totals.terlambat)}
+          detail={`${totals.hadir} Hadir • ${totals.terlambat} Terlambat`}
+          tone="emerald"
+        />
+        <StatCard
+          icon="shield"
+          label="Izin / Sakit / Dispen"
+          value={String(totals.izin + totals.sakit + totals.dispensasi)}
+          detail={`${totals.izin} Izin • ${totals.sakit} Sakit • ${totals.dispensasi} Dispen`}
+          tone="amber"
+        />
+        <StatCard
+          icon="users"
+          label="Rata-rata Kehadiran"
+          value={`${avgAttendance}%`}
+          detail={`${rows.length} mahasiswa terdaftar`}
+          tone="blue"
+        />
+      </div>
+
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-4 border-b border-slate-100 p-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="w-full lg:max-w-md">
+            <SelectField label="Pilih Mata Kuliah & Kelas" value={selectedSectionId} onChange={setSelectedSectionId}>
+              {sections.length > 0 ? (
+                sections.map((sec) => (
+                  <option key={sec.sectionId} value={sec.sectionId}>
+                    {sec.code} — {sec.name} ({sec.sectionName})
+                  </option>
+                ))
+              ) : (
+                <option value="">Belum ada kelas</option>
+              )}
+            </SelectField>
+          </div>
+          <div className="relative w-full lg:w-72">
+            <Icon name="search" size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 py-2.5 pl-10 pr-4 text-sm outline-none focus:border-blue-500"
+              placeholder="Cari nama atau NIM..."
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-slate-50/70 px-5 py-3 text-xs text-slate-500">
+          <span className="font-semibold text-slate-700">Keterangan & Bobot Poin:</span>
+          <span><b className="text-emerald-700">H</b> = Hadir (1.0)</span>
+          <span><b className="text-violet-700">S</b> = Sakit (1.0)</span>
+          <span><b className="text-cyan-700">D</b> = Dispensasi (1.0)</span>
+          <span><b className="text-blue-700">I</b> = Izin (0.75)</span>
+          <span><b className="text-amber-700">T</b> = Terlambat (0.5)</span>
+          <span><b className="text-red-700">A</b> = Alpha (0)</span>
+          <span><b className="text-slate-400">-</b> = Belum ada sesi</span>
+        </div>
+
+        {loading ? (
+          <div className="p-10 text-center text-sm text-slate-400">Memuat matriks presensi Pertemuan 1–16...</div>
+        ) : filteredRows.length === 0 ? (
+          <div className="p-10 text-center text-sm text-slate-400">Belum ada mahasiswa terdaftar pada kelas ini.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-slate-500">
+                  <th className="sticky left-0 z-10 bg-slate-50 px-4 py-3 font-semibold">Mahasiswa</th>
+                  {Array.from({ length: 16 }, (_, i) => (
+                    <th key={i + 1} className="px-2 py-3 text-center font-semibold">
+                      P{i + 1}
+                    </th>
+                  ))}
+                  <th className="px-2.5 py-3 text-center font-bold text-emerald-700">H</th>
+                  <th className="px-2.5 py-3 text-center font-bold text-amber-700">T</th>
+                  <th className="px-2.5 py-3 text-center font-bold text-blue-700">I</th>
+                  <th className="px-2.5 py-3 text-center font-bold text-violet-700">S</th>
+                  <th className="px-2.5 py-3 text-center font-bold text-cyan-700">D</th>
+                  <th className="px-2.5 py-3 text-center font-bold text-red-700">A</th>
+                  <th className="px-2.5 py-3 text-center font-bold text-slate-600">Poin</th>
+                  <th className="px-3 py-3 text-right font-bold text-slate-700">%</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredRows.map((row) => (
+                  <tr key={row.studentId} className="hover:bg-slate-50/80">
+                    <td className="sticky left-0 z-10 bg-white px-4 py-3">
+                      <div className="font-semibold text-slate-800">{row.name}</div>
+                      <div className="text-[11px] text-slate-400">{row.studentNumber}</div>
+                    </td>
+                    {Array.from({ length: 16 }, (_, i) => {
+                      const code = row.meetings[i + 1] || "-";
+                      return (
+                        <td key={i + 1} className="px-1.5 py-3 text-center">
+                          <span className={`inline-flex size-6 items-center justify-center rounded-md border font-bold ${badgeStyle[code]}`}>
+                            {code}
+                          </span>
+                        </td>
+                      );
+                    })}
+                    <td className="px-2.5 py-3 text-center font-bold text-emerald-700">{row.hadir}</td>
+                    <td className="px-2.5 py-3 text-center font-bold text-amber-700">{row.terlambat}</td>
+                    <td className="px-2.5 py-3 text-center font-bold text-blue-700">{row.izin}</td>
+                    <td className="px-2.5 py-3 text-center font-bold text-violet-700">{row.sakit}</td>
+                    <td className="px-2.5 py-3 text-center font-bold text-cyan-700">{row.dispensasi}</td>
+                    <td className="px-2.5 py-3 text-center font-bold text-red-700">{row.alpha}</td>
+                    <td className="px-2.5 py-3 text-center font-semibold text-slate-600">{row.points}/{completedMeetings.length}</td>
+                    <td className="px-3 py-3 text-right font-bold text-slate-800">{row.percentage}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
+  );
 }
 
 export default function App() { 
@@ -1462,7 +2343,7 @@ useEffect(() => {
   const [sessionCreated, setSessionCreated] = useState(false);
   const [history, setHistory] = useState(initialHistory);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>(initialLeaveRequests);
-  const [selectedLeaveId, setSelectedLeaveId] = useState<string | number>(initialLeaveRequests[0].id);
+  const [selectedLeaveId, setSelectedLeaveId] = useState<string | number>("");
   const navigate = (next: Screen) => setScreen(next);
   const login = (userProfile: UserProfile) => {
     setProfile(userProfile);
@@ -1474,7 +2355,7 @@ useEffect(() => {
     setScreen("login");
     void signOutFromSupabase();
   };
-  const switchRole = () => { const next = role === "student" ? "lecturer" : "student"; setRole(next); setScreen(next === "student" ? "student-dashboard" : "lecturer-dashboard"); };
+
 
   useEffect(() => {
     getCurrentProfile().then((existing) => {
@@ -1501,25 +2382,32 @@ useEffect(() => {
       });
       fetchStudentAttendanceHistory(profile.id).then((dbHist) => {
         if (dbHist.length > 0) {
-          setHistory([...dbHist, ...initialHistory]);
+          setHistory(dbHist);
         }
       });
-      fetchStudentLeaveRequests(profile.id).then((dbLeaves) => {
-        if (dbLeaves.length > 0) {
-          setLeaveRequests([...dbLeaves, ...initialLeaveRequests]);
-        }
-      });
+      const loadStudentLeaves = () => {
+        fetchStudentLeaveRequests(profile.id).then((dbLeaves) => {
+          setLeaveRequests(dbLeaves);
+        });
+      };
+      loadStudentLeaves();
+      const timer = window.setInterval(loadStudentLeaves, 3000);
+      return () => window.clearInterval(timer);
     } else {
+      let timer: number | undefined;
       fetchLecturerSections(profile.id).then((sections) => {
         setDbLecturerSections(sections);
         const ids = sections.map((s) => s.sectionId);
         fetchLatestActiveSession(ids).then(setActiveSession);
-        fetchLecturerLeaveRequests(ids).then((dbLeaves) => {
-          if (dbLeaves.length > 0) {
-            setLeaveRequests([...dbLeaves, ...initialLeaveRequests]);
-          }
-        });
+        const loadLecturerLeaves = () => {
+          fetchLecturerLeaveRequests(ids).then((dbLeaves) => {
+            setLeaveRequests(dbLeaves);
+          });
+        };
+        loadLecturerLeaves();
+        timer = window.setInterval(loadLecturerLeaves, 3000);
       });
+      return () => { if (timer) window.clearInterval(timer); };
     }
   }, [profile]);
 
@@ -1539,6 +2427,11 @@ useEffect(() => {
       status: "Hadir",
     };
     setHistory((rows) => [attendance, ...rows]);
+    if (profile) {
+      fetchStudentAttendanceHistory(profile.id).then((dbHist) => {
+        if (dbHist.length > 0) setHistory(dbHist);
+      });
+    }
   };
 
   const handleCloseSession = async () => {
@@ -1612,20 +2505,119 @@ useEffect(() => {
   if (screen === "login") return <Login onLogin={login} />;
   const title = role === "student" ? "Portal Mahasiswa" : "Portal Dosen";
   const selectedLeave = leaveRequests.find((request) => request.id === selectedLeaveId);
-  return <AppShell role={role} screen={screen} navigate={navigate} title={title} switchRole={switchRole} profile={profile} onLogout={logout}>
-    {screen === "student-dashboard" && <StudentDashboard navigate={navigate} attendanceCount={scanned ? 39 : 38} leaveRequests={leaveRequests} courses={dbStudentCourses} profile={profile} onRefreshCourses={async () => { if (profile) setDbStudentCourses(await fetchStudentCourses(profile.id)); }} />}
+
+  const notifications: AppNotification[] =
+    role === "student"
+      ? [
+          ...(activeSession
+            ? [
+                {
+                  id: `session-${activeSession.id}`,
+                  title: `Sesi Presensi Dibuka: ${activeSession.courseCode}`,
+                  body: `${activeSession.courseName} (${activeSession.title}) sedang berlangsung. Klik untuk scan QR.`,
+                  time: "Sedang aktif",
+                  tone: "blue" as const,
+                  targetScreen: "scan" as Screen,
+                },
+              ]
+            : []),
+          ...leaveRequests
+            .filter(
+              (req) =>
+                req.studentId === (profile?.student_number || "2510511009") &&
+                req.status !== "Menunggu Persetujuan"
+            )
+            .slice(0, 5)
+            .map((req) => ({
+              id: `leave-decision-${req.id}-${req.status}`,
+              title: `Pengajuan ${req.reason} ${req.status}`,
+              body: `${req.course} (${formatAbsenceDate(req.absenceDate)})${req.lecturerNote ? ` • Catatan: ${req.lecturerNote}` : ""}`,
+              time: req.submittedAt,
+              tone: req.status === "Disetujui" ? ("emerald" as const) : ("red" as const),
+              targetScreen: "leave-detail-student" as Screen,
+              leaveId: req.id,
+            })),
+        ]
+      : [
+          ...(activeSession
+            ? [
+                {
+                  id: `lecturer-session-${activeSession.id}`,
+                  title: `Sesi Live Berjalan: ${activeSession.courseCode}`,
+                  body: `${activeSession.courseName} (${activeSession.title}) masih terbuka. Klik untuk memantau.`,
+                  time: "Sedang aktif",
+                  tone: "blue" as const,
+                  targetScreen: "live" as Screen,
+                },
+              ]
+            : []),
+          ...leaveRequests
+            .filter((req) => req.status === "Menunggu Persetujuan")
+            .slice(0, 6)
+            .map((req) => ({
+              id: `lecturer-pending-${req.id}`,
+              title: `Permohonan ${req.reason} dari ${req.student}`,
+              body: `${req.course} (${req.group}) • ${formatAbsenceDate(req.absenceDate)}`,
+              time: req.submittedAt,
+              tone: "amber" as const,
+              targetScreen: "leave-detail-lecturer" as Screen,
+              leaveId: req.id,
+            })),
+        ];
+
+  const handleOpenNotification = (item: AppNotification) => {
+    if (item.leaveId !== undefined) {
+      setSelectedLeaveId(item.leaveId);
+    }
+    navigate(item.targetScreen);
+  };
+
+  return <AppShell role={role} screen={screen} navigate={navigate} title={title} profile={profile} onLogout={logout} notifications={notifications} onOpenNotification={handleOpenNotification}>
+    {screen === "student-dashboard" && <StudentDashboard navigate={navigate} history={history} leaveRequests={leaveRequests} courses={dbStudentCourses} profile={profile} onRefreshCourses={async () => { if (profile) setDbStudentCourses(await fetchStudentCourses(profile.id)); }} />}
     {screen === "scan" && <Scanner navigate={navigate} scanned={scanned} onSuccess={scanSuccess} activeSession={activeSession} profile={profile} />}
     {screen === "history" && <AttendanceHistory history={history} />}
     {screen === "leave-form" && <LeaveRequestForm navigate={navigate} onSubmit={submitLeaveRequest} courses={dbStudentCourses} />}
-    {screen === "leave-history" && <LeaveHistory requests={leaveRequests} navigate={navigate} onSelect={setSelectedLeaveId} />}
+    {screen === "leave-history" && <LeaveHistory requests={leaveRequests} navigate={navigate} onSelect={setSelectedLeaveId} studentNumber={profile?.student_number} />}
     {screen === "leave-detail-student" && <StudentLeaveDetail request={selectedLeave} navigate={navigate} />}
-    {screen === "lecturer-dashboard" && <LecturerDashboard navigate={navigate} leaveRequests={leaveRequests} sections={dbLecturerSections} profile={profile} onRefreshSections={async () => { if (profile) setDbLecturerSections(await fetchLecturerSections(profile.id)); }} />}
+    {screen === "lecturer-dashboard" && <LecturerDashboard navigate={navigate} leaveRequests={leaveRequests} sections={dbLecturerSections} profile={profile} activeSession={activeSession} onRefreshSections={async () => { if (profile) setDbLecturerSections(await fetchLecturerSections(profile.id)); }} />}
     {screen === "leave-requests" && <LecturerLeaveRequests requests={leaveRequests} navigate={navigate} onSelect={setSelectedLeaveId} />}
     {screen === "leave-detail-lecturer" && <LecturerLeaveDetail request={selectedLeave} navigate={navigate} onDecision={decideLeaveRequest} />}
     {screen === "create-session" && <CreateSession navigate={navigate} sections={dbLecturerSections} onCreate={(session) => { setActiveSession(session); setSessionCreated(true); }} />}
     {screen === "live" && <LiveAttendance navigate={navigate} sessionCreated={sessionCreated} leaveRequests={leaveRequests} activeSession={activeSession} onCloseSession={handleCloseSession} />}
+    {screen === "semester-recap" && <SemesterRecap navigate={navigate} sections={dbLecturerSections} />}
   </AppShell>;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
