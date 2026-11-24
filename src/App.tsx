@@ -626,15 +626,9 @@ function Login({ onLogin }: { onLogin: (profile: UserProfile) => void }) {
     <div className="flex min-h-screen w-full items-center justify-center p-6 lg:w-1/2 lg:p-10">
       <div className="w-full max-w-md">
         <Logo />
-        <div className="mt-8 flex items-center justify-between gap-4">
-          <div>
-            <div className="text-2xl font-bold tracking-tight text-slate-900">{authMode === "login" ? "Selamat datang kembali" : "Buat akun baru"}</div>
-            <p className="mt-1 text-sm text-slate-500">{authMode === "login" ? "Masuk ke portal SmartAttend." : "Daftarkan akun mahasiswa atau dosen baru."}</p>
-          </div>
-          <div className="flex rounded-xl bg-slate-100 p-1 text-xs font-semibold">
-            <button type="button" onClick={() => { setAuthMode("login"); setPassword("demo1234"); setError(""); }} className={`rounded-lg px-3 py-1.5 transition ${authMode === "login" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600"}`}>Masuk</button>
-            <button type="button" onClick={() => { setAuthMode("register"); setEmail(""); setPassword("demo1234"); setError(""); }} className={`rounded-lg px-3 py-1.5 transition ${authMode === "register" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600"}`}>Daftar</button>
-          </div>
+        <div className="mt-8">
+          <div className="text-2xl font-bold tracking-tight text-slate-900">Selamat datang kembali</div>
+          <p className="mt-1 text-sm text-slate-500">Masuk ke portal SmartAttend menggunakan akun institusi.</p>
         </div>
         <div className="mt-6 rounded-xl bg-slate-100 p-1">
           <div className="grid grid-cols-2 gap-1">
@@ -652,21 +646,10 @@ function Login({ onLogin }: { onLogin: (profile: UserProfile) => void }) {
               ))}
             </SelectField>
           )}
-          {authMode === "register" && <>
-            <Field label="Nama lengkap" icon="user" value={fullName} onChange={setFullName} placeholder="Masukkan nama lengkap" />
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label={role === "student" ? "NIM" : "NIP / NIDN"} value={studentNumber} onChange={setStudentNumber} placeholder="25105110xx" />
-              <SelectField label="Program Studi" value={department} onChange={setDepartment}>
-                <option value="S1 Informatika - FIK UPNVJ">S1 Informatika</option>
-                <option value="S1 Sistem Informasi - FIK UPNVJ">S1 Sistem Informasi</option>
-                <option value="S1 Sains Data - FIK UPNVJ">S1 Sains Data</option>
-                <option value="D3 Sistem Informasi - FIK UPNVJ">D3 Sistem Informasi</option>
-              </SelectField>
-            </div>
-          </>}
+
           <Field label="Email institusi" icon="user" type="email" value={email} onChange={setEmail} placeholder="nama@upnvj.ac.id" />
           <Field label="Kata sandi" icon="shield" type="password" value={password} onChange={setPassword} placeholder="Minimal 6 karakter" />
-          <Button type="submit" disabled={loading} className="w-full !py-3.5">{loading ? "Memproses..." : authMode === "login" ? `Masuk sebagai ${role === "student" ? "Mahasiswa" : "Dosen"}` : `Daftar & Masuk sebagai ${role === "student" ? "Mahasiswa" : "Dosen"}`}<Icon name="chevron" size={18} /></Button>
+          <Button type="submit" disabled={loading} className="w-full !py-3.5">{loading ? "Memproses..." : `Masuk sebagai ${role === "student" ? "Mahasiswa" : "Dosen"}`}<Icon name="chevron" size={18} /></Button>
         </form>
       </div>
     </div>
@@ -2690,6 +2673,7 @@ useEffect(() => {
     {screen === "semester-recap" && <SemesterRecap navigate={navigate} sections={dbLecturerSections} />}
   </AppShell>;
 }
+
 
 
 
