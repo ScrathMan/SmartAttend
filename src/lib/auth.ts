@@ -91,6 +91,19 @@ export async function signUpWithSupabase(params: {
     }
   }
 
+  if (params.role === "student") {
+    const { data: allSections } = await supabase.from("class_sections").select("id");
+    if (allSections && allSections.length > 0) {
+      await supabase.from("enrollments").upsert(
+        allSections.map((sec: { id: string }) => ({
+          student_id: data.user!.id,
+          section_id: sec.id,
+        })),
+        { onConflict: "student_id,section_id" }
+      );
+    }
+  }
+
   return profilePayload as UserProfile;
 }
 
@@ -111,3 +124,4 @@ export async function getCurrentProfile(): Promise<UserProfile | null> {
 export async function signOutFromSupabase() {
   await supabase.auth.signOut();
 }
+

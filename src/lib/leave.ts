@@ -154,20 +154,35 @@ export async function decideLeaveRequestInDb(params: {
 
   if (params.status === "Disetujui" && leaveRow?.student_id && leaveRow?.section_id) {
     const dbStatus = leaveRow.reason === "Sakit" ? "sick" : leaveRow.reason === "Dispensasi" ? "dispensation" : "excused";
+    const { data: fullLeave } = await supabase
+      .from("leave_requests")
+      .select("description")
+      .eq("id", params.id)
+      .maybeSingle();
+    const descMatch = String(fullLeave?.description || "").match(/Pertemuan\s*(\d+)/i);
+    const targetMeetingNum = descMatch ? Number(descMatch[1]) : null;
+
     const { data: sessions } = await supabase
       .from("attendance_sessions")
-      .select("id, starts_at, status")
+      .select("id, title, starts_at, status")
       .eq("section_id", leaveRow.section_id)
       .order("starts_at", { ascending: false })
-      .limit(10);
+      .limit(20);
 
     let targetSessionId: string | null = null;
     if (sessions && sessions.length > 0) {
+      const byMeeting = targetMeetingNum
+        ? sessions.find((s: any) => {
+            const m = String(s.title || "").match(/(\d+)/);
+            return m && Number(m[1]) === targetMeetingNum;
+          })
+        : undefined;
       const sameDate = sessions.find(
         (s: any) => s.starts_at && String(s.starts_at).slice(0, 10) === String(leaveRow.absence_date).slice(0, 10)
       );
-      const openSession = sessions.find((s: any) => s.status === "open");
-      targetSessionId = (sameDate || openSession || sessions[0]).id;
+      const activeSession = sessions.find((s: any) => s.status === "active" || s.status === "open");
+      const chosen = byMeeting || sameDate || activeSession || sessions[0];
+      targetSessionId = chosen.id;
     }
 
     if (targetSessionId) {
@@ -194,6 +209,7 @@ export async function decideLeaveRequestInDb(params: {
     }
   }
 }
+
 
 
 

@@ -483,7 +483,7 @@ export async function fetchSemesterRecapMatrix(sectionId: string): Promise<Semes
       .order("starts_at", { ascending: true }),
     supabase
       .from("leave_requests")
-      .select("student_id, absence_date, reason, status")
+      .select("student_id, absence_date, reason, description, status")
       .eq("section_id", sectionId)
       .eq("status", "Disetujui"),
   ]);
@@ -502,12 +502,19 @@ export async function fetchSemesterRecapMatrix(sectionId: string): Promise<Semes
     records = recData || [];
   }
 
-  // Petakan setiap session ke nomor pertemuan 1..16
+  // Petakan setiap session ke nomor pertemuan 1..16 (prioritaskan sesi aktif / terbaru bila ada duplikat pertemuan)
   const meetingSessionMap = new Map<number, any>();
+  const meetingAllSessions = new Map<number, any[]>();
   sessions.forEach((s: any, idx: number) => {
     const match = String(s.title || "").match(/(\d+)/);
     const num = match ? Math.min(16, Math.max(1, Number(match[1]))) : Math.min(16, idx + 1);
-    meetingSessionMap.set(num, s);
+    const list = meetingAllSessions.get(num) || [];
+    list.push(s);
+    meetingAllSessions.set(num, list);
+    const existing = meetingSessionMap.get(num);
+    if (!existing || s.status === "active" || existing.status !== "active") {
+      meetingSessionMap.set(num, s);
+    }
   });
 
   const completedMeetings = Array.from(meetingSessionMap.keys()).sort((a, b) => a - b);
@@ -528,12 +535,14 @@ export async function fetchSemesterRecapMatrix(sectionId: string): Promise<Semes
     .sort((a, b) => a.studentNumber.localeCompare(b.studentNumber))
     .map((st) => {
       const meetings: Record<number, "H" | "T" | "I" | "S" | "D" | "A" | "-"> = {};
+      const usedLeaveIdx = new Set<number>();
       let hadir = 0;
       let terlambat = 0;
       let izin = 0;
       let sakit = 0;
       let dispensasi = 0;
       let alpha = 0;
+      let countedMeetings = 0;
 
       for (let m = 1; m <= 16; m++) {
         const sess = meetingSessionMap.get(m);
@@ -542,34 +551,42 @@ export async function fetchSemesterRecapMatrix(sectionId: string): Promise<Semes
           continue;
         }
 
-        const rec = records.find((r: any) => r.session_id === sess.id && r.student_id === st.studentId);
+        const sameMeetingSessionIds = new Set((meetingAllSessions.get(m) || [sess]).map((x: any) => x.id));
+        const matchingRecs = records.filter((r: any) => sameMeetingSessionIds.has(r.session_id) && r.student_id === st.studentId);
+        const rec =
+          matchingRecs.find((r: any) => r.status === "sick" || r.status === "dispensation" || r.status === "excused") ||
+          matchingRecs.find((r: any) => r.status === "present" || r.status === "late") ||
+          matchingRecs.find((r: any) => r.session_id === sess.id) ||
+          matchingRecs[0];
         const sessDate = sess.starts_at ? String(sess.starts_at).slice(0, 10) : "";
-        let code: "H" | "T" | "I" | "S" | "D" | "A" = "A";
-        if (rec) {
+        let code: "H" | "T" | "I" | "S" | "D" | "A" | "-" =
+          sess.status === "active" ? "-" : "A";
+
+        const leaveIdx = approvedLeaves.findIndex((lv: any, idx: number) => {
+          if (usedLeaveIdx.has(idx) || lv.student_id !== st.studentId) return false;
+          const descMatch = String(lv.description || "").match(/Pertemuan\s*(\d+)/i);
+          if (descMatch) return Number(descMatch[1]) === m;
+          return Boolean(sessDate && String(lv.absence_date).slice(0, 10) === sessDate);
+        });
+
+        if (leaveIdx >= 0) {
+          usedLeaveIdx.add(leaveIdx);
+          const leave = approvedLeaves[leaveIdx];
+          if (leave.reason === "Sakit") code = "S";
+          else if (leave.reason === "Dispensasi") code = "D";
+          else code = "I";
+        } else if (rec) {
           if (rec.status === "absent") code = "A";
           else if (rec.status === "late") code = "T";
           else if (rec.status === "sick") code = "S";
           else if (rec.status === "dispensation") code = "D";
           else if (rec.status === "excused") code = "I";
           else code = "H";
-        } else {
-          const leaveIdx = approvedLeaves.findIndex(
-            (lv: any) =>
-              !lv._used &&
-              lv.student_id === st.studentId &&
-              sessDate &&
-              String(lv.absence_date).slice(0, 10) === sessDate
-          );
-          if (leaveIdx >= 0) {
-            const leave = approvedLeaves[leaveIdx];
-            leave._used = true;
-            if (leave.reason === "Sakit") code = "S";
-            else if (leave.reason === "Dispensasi") code = "D";
-            else code = "I";
-          }
         }
 
         meetings[m] = code;
+        if (code === "-") continue;
+        countedMeetings++;
         if (code === "H") hadir++;
         else if (code === "T") terlambat++;
         else if (code === "I") izin++;
@@ -578,7 +595,7 @@ export async function fetchSemesterRecapMatrix(sectionId: string): Promise<Semes
         else alpha++;
       }
 
-      const totalHeld = completedMeetings.length;
+      const totalHeld = countedMeetings;
       const points = Number(
         (hadir * 1.0 + sakit * 1.0 + dispensasi * 1.0 + izin * 0.75 + terlambat * 0.5 + alpha * 0).toFixed(2)
       );
@@ -602,6 +619,9 @@ export async function fetchSemesterRecapMatrix(sectionId: string): Promise<Semes
 
   return { completedMeetings, rows };
 }
+
+
+
 
 
 

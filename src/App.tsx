@@ -319,6 +319,35 @@ type AppNotification = {
   leaveId?: string | number;
 };
 
+function playNotificationChime() {
+  try {
+    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    if (ctx.state === "suspended") {
+      ctx.resume().catch(() => {});
+    }
+    const now = ctx.currentTime;
+    const notes = [1046.5, 1318.51]; // C6 -> E6 soft bell chime
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, now + idx * 0.11);
+      gain.gain.setValueAtTime(0.0001, now + idx * 0.11);
+      gain.gain.exponentialRampToValueAtTime(0.08, now + idx * 0.11 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.11 + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + idx * 0.11);
+      osc.stop(now + idx * 0.11 + 0.38);
+    });
+    setTimeout(() => ctx.close().catch(() => {}), 900);
+  } catch {
+    // Abaikan jika browser memblokir autoplay audio sebelum interaksi pertama
+  }
+}
+
 function Topbar({
   title,
   role,
@@ -338,7 +367,9 @@ function Topbar({
 }) {
   const [open, setOpen] = useState(false);
   const [readIds, setReadIds] = useState<string[]>([]);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const knownIdsRef = useRef<Set<string> | null>(null);
 
   useEffect(() => {
     const handleOutside = (e: MouseEvent) => {
@@ -349,6 +380,21 @@ function Topbar({
     document.addEventListener("mousedown", handleOutside);
     return () => document.removeEventListener("mousedown", handleOutside);
   }, []);
+
+  useEffect(() => {
+    const currentIds = notifications.map((n) => n.id);
+    if (knownIdsRef.current === null) {
+      knownIdsRef.current = new Set(currentIds);
+      return;
+    }
+    const hasNewUnread = currentIds.some(
+      (id) => !knownIdsRef.current!.has(id) && !readIds.includes(id)
+    );
+    currentIds.forEach((id) => knownIdsRef.current!.add(id));
+    if (hasNewUnread && soundEnabled) {
+      playNotificationChime();
+    }
+  }, [notifications, readIds, soundEnabled]);
 
   const displayName = profile?.full_name || (role === "student" ? "Agoy Salloh" : "Dr. Bima Santoso");
   const initials = displayName.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
@@ -406,15 +452,29 @@ function Topbar({
                   {unreadCount > 0 ? `${unreadCount} belum dibaca` : "Semua sudah dibaca"}
                 </div>
               </div>
-              {unreadCount > 0 && (
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={markAllRead}
-                  className="text-[11px] font-semibold text-blue-600 hover:text-blue-700"
+                  onClick={() => {
+                    const next = !soundEnabled;
+                    setSoundEnabled(next);
+                    if (next) playNotificationChime();
+                  }}
+                  title={soundEnabled ? "Suara notifikasi aktif (klik untuk bisukan)" : "Suara notifikasi dibisukan (klik untuk aktifkan)"}
+                  className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold transition ${soundEnabled ? "bg-blue-50 text-blue-600 hover:bg-blue-100" : "bg-slate-100 text-slate-400 hover:bg-slate-200"}`}
                 >
-                  Tandai dibaca
+                  {soundEnabled ? "🔔 Bunyi" : "🔕 Bisu"}
                 </button>
-              )}
+                {unreadCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={markAllRead}
+                    className="text-[11px] font-semibold text-blue-600 hover:text-blue-700"
+                  >
+                    Tandai dibaca
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="max-h-60 divide-y divide-slate-100 overflow-y-auto">
@@ -492,6 +552,7 @@ function PageHeading({ eyebrow, title, description, action }: { eyebrow?: string
     {action}
   </div>;
 }
+
 
 const DEMO_LECTURERS = [
   { label: "Dr. Desta Sandya Prasvita (Metlit, PBO)", email: "desta.sandya@dosen.upnvj.ac.id" },
@@ -583,6 +644,7 @@ function Login({ onLogin }: { onLogin: (profile: UserProfile) => void }) {
         </div>
         <form onSubmit={submit} className="mt-5 space-y-4">
           {error && <Feedback tone="error">{error}</Feedback>}
+
           {authMode === "login" && role === "lecturer" && (
             <SelectField label="Pilih Akun Dosen Pengampu (Simulasi)" value={email} onChange={setEmail}>
               {DEMO_LECTURERS.map((d) => (
@@ -1173,6 +1235,8 @@ function Scanner({
 }) {
   const [state, setState] = useState<"ready" | "success" | "expired" | "invalid" | "duplicate">("ready");
   const [timeLabel, setTimeLabel] = useState("07.56");
+  const [lastAttendanceLabel, setLastAttendanceLabel] = useState<"Hadir" | "Terlambat">("Hadir");
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [submitting, setSubmitting] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState("");
@@ -1180,6 +1244,11 @@ function Scanner({
   const qrScannerRef = useRef<Html5Qrcode | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scanLockRef = useRef(false);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const stopCamera = async () => {
     const inst = qrScannerRef.current;
@@ -1372,8 +1441,13 @@ function Scanner({
     if (activeSession && profile) {
       setSubmitting(true);
       try {
-        const res = await submitStudentCheckIn({ sessionId: activeSession.id, studentId: profile.id });
+        const res = await submitStudentCheckIn({
+          sessionId: activeSession.id,
+          studentId: profile.id,
+          startsAt: activeSession.startsAt,
+        });
         setTimeLabel(res.timeLabel);
+        setLastAttendanceLabel(res.attendanceLabel);
         if (res.status === "duplicate") {
           setState("duplicate");
         } else {
@@ -1396,9 +1470,22 @@ function Scanner({
   };
 
   const sessionCourseName = activeSession?.courseName || "Pemrograman Berorientasi Objek";
+  const graceMs = 15 * 60 * 1000;
+  const startMs = activeSession?.startsAt ? new Date(activeSession.startsAt).getTime() : NaN;
+  const elapsedMs = !Number.isNaN(startMs) ? Math.max(0, nowMs - startMs) : 0;
+  const remainingMs = Math.max(0, graceMs - elapsedMs);
+  const isPastGrace = !Number.isNaN(startMs) && elapsedMs > graceMs;
+  const remMin = Math.floor(remainingMs / 60000);
+  const remSec = Math.floor((remainingMs % 60000) / 1000);
+  const lateMin = Math.floor((elapsedMs - graceMs) / 60000);
+  const countdownText = `${String(remMin).padStart(2, "0")}:${String(remSec).padStart(2, "0")}`;
+
   const messages = {
-    success: { icon: "check" as IconName, title: "Presensi berhasil!", text: `Kehadiranmu untuk ${sessionCourseName} telah tercatat pukul ${timeLabel}.`, color: "emerald" },
-    expired: { icon: "clock" as IconName, title: "Kode QR kedaluwarsa", text: "Sesi ini telah berakhir pukul 09.40. Minta dosen membuat sesi baru.", color: "amber" },
+    success:
+      lastAttendanceLabel === "Terlambat"
+        ? { icon: "clock" as IconName, title: "Presensi tercatat (Terlambat)", text: `Kehadiranmu untuk ${sessionCourseName} tercatat Terlambat pukul ${timeLabel} (melewati batas 15 menit).`, color: "amber" }
+        : { icon: "check" as IconName, title: "Presensi berhasil!", text: `Kehadiranmu untuk ${sessionCourseName} telah tercatat Hadir pukul ${timeLabel}.`, color: "emerald" },
+    expired: { icon: "clock" as IconName, title: "Kode QR kedaluwarsa", text: "Sesi ini telah berakhir. Minta dosen membuat sesi baru.", color: "amber" },
     invalid: { icon: "x" as IconName, title: "Sesi tidak valid", text: "Kode QR ini tidak dikenali atau bukan untuk jadwal kuliahmu.", color: "red" },
     duplicate: { icon: "info" as IconName, title: "Presensi sudah tercatat", text: `Kamu sudah melakukan presensi untuk sesi ini pukul ${timeLabel}.`, color: "blue" },
   };
@@ -1460,13 +1547,29 @@ function Scanner({
       </section>
       <aside className="space-y-4">
         {activeSession && (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900">
-            <div className="flex items-center gap-2 font-bold text-emerald-800">
-              <span className="size-2 animate-pulse rounded-full bg-emerald-500" />
+          <div className={`rounded-2xl border p-4 text-xs ${isPastGrace ? "border-amber-300 bg-amber-50 text-amber-950" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
+            <div className={`flex items-center gap-2 font-bold ${isPastGrace ? "text-amber-800" : "text-emerald-800"}`}>
+              <span className={`size-2 animate-pulse rounded-full ${isPastGrace ? "bg-amber-500" : "bg-emerald-500"}`} />
               Sesi aktif terdeteksi: {activeSession.courseCode}
             </div>
             <div className="mt-1 font-semibold">{activeSession.courseName} ({activeSession.sectionName})</div>
-            <div className="mt-0.5 text-emerald-700">{activeSession.title} • Silakan pindai QR yang ditampilkan dosen</div>
+            <div className={`mt-0.5 ${isPastGrace ? "text-amber-800" : "text-emerald-700"}`}>
+              {activeSession.title} • Silakan pindai QR yang ditampilkan dosen
+            </div>
+            {!Number.isNaN(startMs) && (
+              <div className={`mt-3 flex items-center gap-2 rounded-xl px-3 py-2 font-semibold ${isPastGrace ? "border border-amber-300 bg-amber-100/80 text-amber-900" : "border border-emerald-200 bg-white/80 text-emerald-800"}`}>
+                <Icon name="clock" size={15} />
+                {isPastGrace ? (
+                  <span>
+                    Peringatan: Batas tepat waktu 15 menit telah lewat ({lateMin} menit). Scan sekarang akan tercatat <strong>Terlambat (T)</strong>.
+                  </span>
+                ) : (
+                  <span>
+                    Batas tepat waktu (Hadir): sisa <strong>{countdownText}</strong> sebelum status menjadi Terlambat.
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         )}
         {state !== "ready" && <ScanResult data={messages[state]} onAgain={() => { setState("ready"); scanLockRef.current = false; }} onHome={() => navigate("student-dashboard")} />}
@@ -2587,6 +2690,10 @@ useEffect(() => {
     {screen === "semester-recap" && <SemesterRecap navigate={navigate} sections={dbLecturerSections} />}
   </AppShell>;
 }
+
+
+
+
 
 
 
